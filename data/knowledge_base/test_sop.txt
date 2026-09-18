@@ -1,0 +1,28 @@
+PUMP INSPECTION SOP
+
+Document ID: SOP-PUMP-001
+
+Purpose:
+This procedure defines the basic inspection requirements for centrifugal pumps.
+
+Inspection Requirements:
+
+1. Check pump vibration during normal operating conditions.
+
+2. Check for unusual noise or abnormal operating sounds.
+
+3. Inspect the pump and connected piping for visible leakage.
+
+4. Check bearing temperature and record the observed value.
+
+5. Verify that lubrication is adequate.
+
+6. Record all inspection findings in the maintenance report.
+
+7. Any abnormal condition should be reported to the responsible maintenance engineer.
+
+Escalation:
+
+If abnormal vibration, excessive bearing temperature, significant leakage, or unusual noise is observed, the equipment should be flagged for further investigation.
+
+The inspection report should contain the date, equipment identification, measured values, observations, and inspector remarks.

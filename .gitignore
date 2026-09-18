@@ -1,0 +1,29 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.pytest_cache/
+
+# External repos
+firstmate/
+
+# Large media frames & raw video renders
+videos/sovereign-ai-demo/frames/
+videos/sovereign-ai-demo/renders/
+ppt/renders/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary data / reports
+data/reports/*
+!data/reports/.gitkeep

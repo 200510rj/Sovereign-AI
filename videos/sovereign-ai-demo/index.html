@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<title>Sovereign AI Workbench — YouTube Cut</title>
+<script src="assets/gsap.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #fff; }
+  #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #0b0f14; }
+  #bg { position: absolute; inset: 0; }
+  .blob { position: absolute; width: 900px; height: 900px; border-radius: 50%; filter: blur(130px); opacity: 0.5; }
+  #blob1 { left: -260px; top: -260px; background: radial-gradient(circle, #14532d 0%, transparent 65%); }
+  #blob2 { right: -300px; top: 10%; background: radial-gradient(circle, #1e3a8a 0%, transparent 65%); opacity: 0.55; }
+  #redglow { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(220,38,38,0.28) 0%, transparent 60%); opacity: 1; }
+  #greenglow { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 60%, rgba(34,197,94,0.22) 0%, transparent 60%); opacity: 0; }
+  #grid { position: absolute; inset: 0; opacity: 0.5;
+    background-image: linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px);
+    background-size: 72px 72px; }
+  #vignette { position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.8) 100%); }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  #progress { position: absolute; left: 0; bottom: 0; height: 10px; width: 1920px; background: #22c55e; transform-origin: left center; }
+  .clip { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 120px; }
+  .scene { opacity: 0; }
+  .eyebrow { font-size: 34px; letter-spacing: 8px; font-weight: 700; margin-bottom: 26px; }
+  .red { color: #f87171; } .green { color: #22c55e; } .dim { color: #64748b; }
+  .slam { margin: 0; font-size: 112px; line-height: 1.12; font-weight: 900; color: #fff; max-width: 1700px; }
+  .big { margin: 0; font-size: 78px; line-height: 1.25; font-weight: 900; color: #fff; max-width: 1660px; }
+  .sub { margin-top: 26px; font-size: 42px; color: #cbd5e1; max-width: 1500px; }
+  .w { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: 0.12em; margin-bottom: -0.12em; }
+  .wi { display: inline-block; will-change: transform; }
+  .chips { display: flex; gap: 28px; margin: 40px 0; }
+  .chip { background: #1e293b; border: 2px solid #f87171; color: #fecaca; border-radius: 999px; padding: 18px 44px; font-size: 38px; font-weight: 700; }
+  .cards { display: flex; gap: 32px; margin-top: 48px; }
+  .card { width: 390px; background: rgba(30,41,59,0.95); border: 1px solid #334155; border-top: 6px solid #22c55e; border-radius: 18px; padding: 30px 26px; text-align: left; }
+  .card .model { font-size: 37px; font-weight: 900; color: #fff; margin-bottom: 10px; }
+  .card .role { font-size: 30px; color: #22c55e; }
+  .browser { width: 1500px; background: rgba(17,24,39,0.97); border: 2px solid #334155; border-radius: 20px; overflow: hidden; margin-top: 34px; }
+  .browser .bar { display: flex; gap: 12px; padding: 15px 24px; border-bottom: 1px solid #334155; }
+  .dot { width: 18px; height: 18px; border-radius: 50%; background: #475569; }
+  .browser img { display: block; width: 100%; height: 520px; object-fit: cover; object-position: top; }
+  .cap { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.82);
+    color: #fff; font-size: 42px; font-weight: 900; letter-spacing: 1px; padding: 16px 44px; border-radius: 14px;
+    border-left: 8px solid #22c55e; white-space: nowrap; opacity: 0; }
+  .cap.danger { border-left-color: #f87171; }
+  .steps { display: flex; align-items: stretch; margin-top: 48px; }
+  .step { width: 264px; background: rgba(30,41,59,0.95); border: 1px solid #334155; padding: 28px 16px; font-size: 33px; font-weight: 900; }
+  .step:first-child { border-radius: 16px 0 0 16px; }
+  .step:last-child { border-radius: 0 16px 16px 0; background: #14532d; border-color: #22c55e; }
+  .step + .step { border-left: none; }
+  .step small { display: block; margin-top: 8px; font-size: 24px; font-weight: 400; color: #94a3b8; }
+  .step:last-child small { color: #bbf7d0; }
+  .arrow { align-self: center; font-size: 44px; color: #22c55e; padding: 0 10px; }
+  .lock { font-size: 120px; margin-bottom: 6px; }
+  .tag { margin-top: 34px; font-size: 32px; letter-spacing: 5px; color: #94a3b8; }
+  #vo { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="sov-demo" data-start="0" data-width="1920" data-height="1080" data-duration="84.5">
+  <div id="bg"><div class="blob" id="blob1"></div><div class="blob" id="blob2"></div></div>
+  <div id="redglow"></div><div id="greenglow"></div><div id="grid"></div>
+  <div id="vo">
+    <audio id="y1" src="assets/y1.mp3" data-start="0.4" data-duration="4.97"></audio>
+    <audio id="y2" src="assets/y2.mp3" data-start="6.3" data-duration="8.16"></audio>
+    <audio id="y3" src="assets/y3.mp3" data-start="15.4" data-duration="8.4"></audio>
+    <audio id="y4" src="assets/y4.mp3" data-start="24.7" data-duration="12.05"></audio>
+    <audio id="y5" src="assets/y5.mp3" data-start="37.7" data-duration="10.8"></audio>
+    <audio id="y6" src="assets/y6.mp3" data-start="49.4" data-duration="6.53"></audio>
+    <audio id="y7" src="assets/y7.mp3" data-start="56.9" data-duration="11.47"></audio>
+    <audio id="y8" src="assets/y8.mp3" data-start="69.3" data-duration="7.51"></audio>
+    <audio id="y9" src="assets/y9.mp3" data-start="77.7" data-duration="4.7"></audio>
+  </div>
+
+  <section id="s1" class="clip scene" data-start="0" data-duration="5.9" style="opacity:1">
+    <p class="slam" id="s1-a" data-words>Your refinery's biggest secrets</p>
+    <p class="slam red" id="s1-b" data-words>are on someone else's computer.</p>
+  </section>
+
+  <section id="s2" class="clip scene" data-start="5.9" data-duration="9.1">
+    <div class="eyebrow red" id="s2-eyebrow">THE LEAK</div>
+    <p class="big" id="s2-a" data-words>Every prompt your team pastes into a cloud chatbot…</p>
+    <div class="chips" id="s2-chips">
+      <div class="chip">pump manuals</div><div class="chip">SOPs</div><div class="chip">inspection reports</div>
+    </div>
+    <p class="big red" id="s2-b" data-words>…leaves the building.</p>
+    <div class="cap danger" id="cap2">YOUR PROMPTS LEAVE THE BUILDING</div>
+  </section>
+
+  <section id="s3" class="clip scene" data-start="15" data-duration="9.3">
+    <div class="eyebrow red" id="s3-eyebrow">THE STAKES</div>
+    <p class="big" id="s3-a" data-words>Thousands of confidential pages.</p>
+    <p class="slam red" id="s3-b" data-words style="font-size:150px">ZERO CLOUD.</p>
+    <div class="cap danger" id="cap3">ZERO CLOUD. PERIOD.</div>
+  </section>
+
+  <section id="s4" class="clip scene" data-start="24.3" data-duration="13">
+    <div class="eyebrow green" id="s4-eyebrow">THE FIX</div>
+    <p class="big" id="s4-a" data-words>Sovereign AI Workbench. <span class="green">AI that lives with your data.</span></p>
+    <div class="cards" id="s4-cards">
+      <div class="card"><div class="model">qwen3.5</div><div class="role">chat + reasoning</div></div>
+      <div class="card"><div class="model">coder 7b</div><div class="role">code generation</div></div>
+      <div class="card"><div class="model">nomic</div><div class="role">KB retrieval</div></div>
+      <div class="card"><div class="model">glm-ocr</div><div class="role">reads scans</div></div>
+    </div>
+    <div class="cap" id="cap4">AI THAT LIVES WITH YOUR DATA</div>
+  </section>
+
+  <section id="s5" class="clip scene" data-start="37.3" data-duration="11.7">
+    <div class="eyebrow green" id="s5-eyebrow">WATCH THIS</div>
+    <div class="browser" id="s5-shot">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <img id="s5-img" src="assets/sov-answered.png" alt="Grounded answer with sources" />
+    </div>
+    <div class="cap" id="cap5">GROUNDED. SOURCED. NO HALLUCINATIONS.</div>
+  </section>
+
+  <section id="s6" class="clip scene" data-start="49" data-duration="7.5">
+    <div class="eyebrow green" id="s6-eyebrow">RECEIPTS</div>
+    <div class="browser" id="s6-shot">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <img id="s6-img" src="assets/sov-answered.png" alt="Sources with similarity scores" style="object-position:bottom" />
+    </div>
+    <div class="cap" id="cap6">SOURCES + SCORES ON EVERY ANSWER</div>
+  </section>
+
+  <section id="s7" class="clip scene" data-start="56.5" data-duration="12.4">
+    <div class="eyebrow green" id="s7-eyebrow">THE LOOP</div>
+    <p class="big" id="s7-a" data-words>Upload. Understand. <span class="green">Ask anything.</span></p>
+    <div class="steps" id="s7-steps">
+      <div class="step">Upload<small>PDF / photo</small></div><div class="arrow">&rsaquo;</div>
+      <div class="step">OCR<small>read + chunk</small></div><div class="arrow">&rsaquo;</div>
+      <div class="step">Index<small>embed to KB</small></div><div class="arrow">&rsaquo;</div>
+      <div class="step">Answer<small>or it says so</small></div>
+    </div>
+    <div class="cap" id="cap7">DOESN'T KNOW? IT SAYS SO.</div>
+  </section>
+
+  <section id="s8" class="clip scene" data-start="68.9" data-duration="8.4">
+    <div class="eyebrow green" id="s8-eyebrow">THE TEST</div>
+    <p class="slam" id="s8-a" data-words>No API keys. No telemetry.</p>
+    <p class="slam green" id="s8-b" data-words>Pull the cable. It still works.</p>
+    <div class="cap" id="cap8">PULL THE CABLE. STILL WORKS.</div>
+  </section>
+
+  <section id="s9" class="clip scene" data-start="77.3" data-duration="7.2">
+    <div class="lock" id="s9-lock">&#128272;</div>
+    <p class="slam" id="s9-a" data-words style="font-size:96px">Sovereign AI Workbench</p>
+    <p class="slam green" id="s9-b" data-words style="font-size:72px">Nothing leaves the machine.</p>
+    <div class="tag" id="s9-tag">SIH 2025 &middot; PROBLEM STATEMENT 26117 &middot; MRPL</div>
+  </section>
+
+  <div id="vignette"></div><div id="flash"></div><div id="progress"></div>
+</div>
+<script>
+  document.querySelectorAll('[data-words]').forEach(function (el) {
+    var nodes = Array.prototype.slice.call(el.childNodes);
+    el.innerHTML = '';
+    nodes.forEach(function (n) {
+      function wrapWord(text) {
+        var w = document.createElement('span'); w.className = 'w';
+        var wi = document.createElement('span'); wi.className = 'wi'; wi.textContent = text;
+        w.appendChild(wi); el.appendChild(w);
+      }
+      if (n.nodeType === 3) {
+        n.textContent.split(/(\s+)/).forEach(function (part) {
+          if (!part) return;
+          if (/^\s+$/.test(part)) el.appendChild(document.createTextNode(' '));
+          else wrapWord(part);
+        });
+      } else {
+        var w = document.createElement('span'); w.className = 'w';
+        var wi = document.createElement('span'); wi.className = 'wi'; wi.appendChild(n);
+        w.appendChild(wi); el.appendChild(w);
+      }
+    });
+  });
+
+  var tl = gsap.timeline({ paused: true });
+  tl.fromTo("#blob1", { x: 0, y: 0 }, { x: 160, y: 120, duration: 21, ease: "sine.inOut", repeat: 3, yoyo: true }, 0);
+  tl.fromTo("#blob2", { x: 0, y: 0 }, { x: -180, y: 140, duration: 26, ease: "sine.inOut", repeat: 2, yoyo: true }, 0);
+  tl.fromTo("#progress", { scaleX: 0 }, { scaleX: 1, duration: 84.5, ease: "none" }, 0);
+  // S1 HOOK 0-5.9 — slam + shake
+  tl.fromTo("#s1-a .wi", { y: "112%" }, { y: "0%", duration: 0.45, ease: "power4.out", stagger: 0.05 }, 0.15);
+  tl.fromTo("#s1-b", { scale: 2.3, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.32, ease: "power4.in" }, 1.5);
+  tl.to("#s1-b", { x: 18, duration: 0.05 }, 1.85);
+  tl.to("#s1-b", { x: -16, duration: 0.05 }, 1.9);
+  tl.to("#s1-b", { x: 10, duration: 0.05 }, 1.95);
+  tl.to("#s1-b", { x: 0, duration: 0.06 }, 2.0);
+  tl.to("#s1", { autoAlpha: 0, x: -200, duration: 0.35, ease: "power3.in" }, 5.5);
+  // S2 5.9-15
+  tl.fromTo("#s2", { autoAlpha: 0, x: 200 }, { autoAlpha: 1, x: 0, duration: 0.35, ease: "power3.out" }, 5.65);
+  tl.fromTo("#s2-eyebrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 5.9);
+  tl.fromTo("#s2-a .wi", { y: "112%" }, { y: "0%", duration: 0.5, ease: "power3.out", stagger: 0.04 }, 6.1);
+  tl.fromTo("#s2-chips .chip", { autoAlpha: 0, scale: 0.6 }, { autoAlpha: 1, scale: 1, duration: 0.4, ease: "back.out(2)", stagger: 0.25 }, 8.2);
+  tl.fromTo("#s2-b .wi", { y: "112%" }, { y: "0%", duration: 0.5, ease: "power3.out", stagger: 0.05 }, 10.6);
+  tl.fromTo("#cap2", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.4 }, 11.2);
+  tl.to("#s2", { autoAlpha: 0, x: -200, duration: 0.35, ease: "power3.in" }, 14.6);
+  // S3 15-24.3
+  tl.fromTo("#s3", { autoAlpha: 0, x: -200 }, { autoAlpha: 1, x: 0, duration: 0.35, ease: "power3.out" }, 14.75);
+  tl.fromTo("#s3-eyebrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 15.0);
+  tl.fromTo("#s3-a .wi", { y: "112%" }, { y: "0%", duration: 0.5, ease: "power3.out", stagger: 0.05 }, 15.4);
+  tl.fromTo("#s3-b", { scale: 2.0, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.35, ease: "power4.in" }, 18.2);
+  tl.to("#s3-b", { x: 14, duration: 0.05 }, 18.6);
+  tl.to("#s3-b", { x: -12, duration: 0.05 }, 18.65);
+  tl.to("#s3-b", { x: 0, duration: 0.06 }, 18.7);
+  tl.fromTo("#cap3", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.4 }, 19.4);
+  tl.to("#redglow", { opacity: 0, duration: 0.8 }, 23.5);
+  tl.to("#greenglow", { opacity: 1, duration: 0.8 }, 23.5);
+  tl.to("#s3", { autoAlpha: 0, x: 200, duration: 0.35, ease: "power3.in" }, 23.9);
+  // S4 24.3-37.3 — theme switch flash
+  tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.9, duration: 0.07 }, 24.15);
+  tl.to("#flash", { opacity: 0, duration: 0.12 }, 24.22);
+  tl.fromTo("#s4", { autoAlpha: 0, x: 200 }, { autoAlpha: 1, x: 0, duration: 0.35, ease: "power3.out" }, 24.1);
+  tl.fromTo("#s4-eyebrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 24.5);
+  tl.fromTo("#s4-a .wi", { y: "112%" }, { y: "0%", duration: 0.5, ease: "power3.out", stagger: 0.04 }, 24.9);
+  tl.fromTo("#s4-cards .card", { autoAlpha: 0, y: 80, scale: 0.92 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.8)", stagger: 0.3 }, 27.0);
+  tl.fromTo("#cap4", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.4 }, 30.5);
+  tl.to("#s4", { autoAlpha: 0, x: -200, duration: 0.35, ease: "power3.in" }, 36.9);
+  // S5 37.3-49 — screenshot punch
+  tl.fromTo("#s5", { autoAlpha: 0, x: -200 }, { autoAlpha: 1, x: 0, duration: 0.35, ease: "power3.out" }, 37.05);
+  tl.fromTo("#s5-eyebrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 37.5);
+  tl.fromTo("#s5-shot", { autoAlpha: 0, scale: 0.9 }, { autoAlpha: 1, scale: 1, duration: 0.5, ease: "power3.out" }, 37.9);
+  tl.to("#s5-shot", { scale: 1.13, duration: 0.28, ease: "power2.in" }, 42.5);
+  tl.to("#s5-shot", { scale: 1.04, duration: 0.3, ease: "power2.out" }, 42.78);
+  tl.fromTo("#s5-img", { scale: 1 }, { scale: 1.08, duration: 10.5, ease: "none" }, 38.2);
+  tl.fromTo("#cap5", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.4 }, 44.0);
+  tl.to("#s5", { autoAlpha: 0, x: 200, duration: 0.35, ease: "power3.in" }, 48.6);
+  // S6 49-56.5 — receipts punch to sources
+  tl.fromTo("#s6", { autoAlpha: 0, x: 200 }, { autoAlpha: 1, x: 0, duration: 0.35, ease: "power3.out" }, 48.75);
+  tl.fromTo("#s6-eyebrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 49.2);
+  tl.fromTo("#s6-shot", { autoAlpha: 0, scale: 1.25 }, { autoAlpha: 1, scale: 1.1, duration: 0.6, ease: "power3.out" }, 49.5);
+  tl.to("#s6-shot", { scale: 1.22, duration: 0.3, ease: "power2.in" }, 52.5);
+  tl.to("#s6-shot", { scale: 1.12, duration: 0.35, ease: "power2.out" }, 52.8);
+  tl.fromTo("#cap6", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.4 }, 53.0);
+  tl.to("#s6", { autoAlpha: 0, x: -200, duration: 0.35, ease: "power3.in" }, 56.1);
+  // S7 56.5-68.9
+  tl.fromTo("#s7", { autoAlpha: 0, x: -200 }, { autoAlpha: 1, x: 0, duration: 0.35, ease: "power3.out" }, 56.25);
+  tl.fromTo("#s7-eyebrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 56.7);
+  tl.fromTo("#s7-a .wi", { y: "112%" }, { y: "0%", duration: 0.5, ease: "power3.out", stagger: 0.05 }, 57.0);
+  tl.fromTo("#s7-steps .step", { autoAlpha: 0, y: 60, scale: 0.9 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.8)", stagger: 0.4 }, 58.5);
+  tl.fromTo("#s7-steps .arrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3, stagger: 0.4 }, 58.8);
+  tl.fromTo("#cap7", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.4 }, 62.5);
+  tl.to("#s7", { autoAlpha: 0, x: 200, duration: 0.35, ease: "power3.in" }, 68.5);
+  // S8 68.9-77.3
+  tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.9, duration: 0.07 }, 68.75);
+  tl.to("#flash", { opacity: 0, duration: 0.12 }, 68.82);
+  tl.fromTo("#s8", { autoAlpha: 0, x: 200 }, { autoAlpha: 1, x: 0, duration: 0.35, ease: "power3.out" }, 68.65);
+  tl.fromTo("#s8-eyebrow", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 69.1);
+  tl.fromTo("#s8-a .wi", { y: "112%" }, { y: "0%", duration: 0.5, ease: "power3.out", stagger: 0.05 }, 69.5);
+  tl.fromTo("#s8-b", { scale: 1.6, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.35, ease: "power4.in" }, 72.6);
+  tl.to("#s8-b", { x: 12, duration: 0.05 }, 73.0);
+  tl.to("#s8-b", { x: -10, duration: 0.05 }, 73.05);
+  tl.to("#s8-b", { x: 0, duration: 0.06 }, 73.1);
+  tl.fromTo("#cap8", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.4 }, 73.8);
+  tl.to("#s8", { autoAlpha: 0, x: -200, duration: 0.35, ease: "power3.in" }, 76.9);
+  // S9 77.3-84.5 end card
+  tl.fromTo("#s9", { autoAlpha: 0, scale: 1.12 }, { autoAlpha: 1, scale: 1, duration: 0.5, ease: "power3.out" }, 77.05);
+  tl.fromTo("#s9-lock", { autoAlpha: 0, scale: 0.3 }, { autoAlpha: 1, scale: 1, duration: 0.7, ease: "back.out(1.7)" }, 77.6);
+  tl.fromTo("#s9-a .wi", { y: "112%" }, { y: "0%", duration: 0.6, ease: "power3.out", stagger: 0.05 }, 78.2);
+  tl.fromTo("#s9-b .wi", { y: "112%" }, { y: "0%", duration: 0.6, ease: "power3.out", stagger: 0.05 }, 79.6);
+  tl.fromTo("#s9-tag", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.6 }, 80.8);
+  tl.to({}, { duration: 0.1 }, 84.5);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["sov-demo"] = tl;
+</script>
+</body>
+</html>
