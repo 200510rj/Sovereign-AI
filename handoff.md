@@ -11,8 +11,9 @@
 - **Title:** Sovereign On-Premise Agentic AI Workbench using Open-Weight Multimodal LLMs for Confidential Industrial Work
 - **Organization:** Mangalore Refinery and Petrochemicals Limited (MRPL)
 - **Category:** Software · **Theme:** Smart Automation
-- **Goal:** Fully local, air-gapped AI workbench for confidential industrial work. Nothing leaves the machine. Upload docs/images → local RAG → grounded answers, local code gen + sandbox, eventually agentic workflows.
+- **Goal:** Fully local, air-gapped AI workbench for confidential industrial work. Nothing leaves the machine. Upload docs/images → local RAG → grounded answers, local code gen + sandbox, dynamic report generation (.pdf, .docx, .xlsx), eventually agentic workflows.
 - **Sovereign claim:** No API keys, no telemetry, no external calls. Ollama + FastAPI + pure-Python vector search.
+- **GitHub Repository:** `https://github.com/200510rj/Sovereign-AI.git` (Tracked on `main` branch, pushed & clean)
 
 ---
 
@@ -20,6 +21,8 @@
 
 - User is learning from scratch, wants **micro-management**: ONE step at a time, exact PowerShell commands, where to run them, wait for output/screenshot before next step.
 - Follow **YAGNI** strictly. Minimal changes to working code.
+- Always include **TDD test verification steps** after each implementation phase.
+
 - Explain what a step proves before moving on.
 - Do NOT restart from scratch. Do NOT ask to reinstall Python/Ollama/models unless broken.
 
