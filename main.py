@@ -169,6 +169,10 @@ class ChatRequest(BaseModel):
 class OllamaConfigRequest(BaseModel):
     url: str
 
+class SearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+
 
 
 # ============================================================
@@ -1396,6 +1400,21 @@ def test_ollama_connection(req: OllamaConfigRequest):
             "error": str(e),
             "message": f"Connection failed: {str(e)}"
         }
+
+
+# ============================================================
+# LIVE WEB SEARCH ENDPOINT
+# ============================================================
+
+@app.post("/search")
+def search_endpoint(request: SearchRequest):
+    import agent
+    results = agent.perform_web_search(request.query, top_k=request.top_k)
+    return {
+        "query": request.query,
+        "count": len(results),
+        "results": results
+    }
 
 
 # ============================================================

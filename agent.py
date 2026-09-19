@@ -110,8 +110,104 @@ TOOL_SCHEMAS = [
                 "required": ["filename"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for up-to-date real-world information, technical specifications, industrial standards, external documentation, or company facts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Keywords or search phrase to query the web for."
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Maximum number of search results to return (default 5).",
+                        "default": 5
+                    }
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
+
+# ============================================================
+# WEB SEARCH HELPER
+# ============================================================
+
+import urllib.parse
+import re
+
+def perform_web_search(query: str, top_k: int = 5) -> list[dict]:
+    """
+    Performs real web search using Wikipedia and DuckDuckGo search APIs.
+    Returns structured results with title, snippet, and source URL.
+    """
+    results = []
+    clean_query = (query or "").strip()
+    if not clean_query:
+        return []
+
+    # 1. Query Wikipedia Search API
+    try:
+        encoded_query = urllib.parse.quote(clean_query)
+        wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_query}&utf8=&format=json"
+        req = Request(wiki_url, headers={"User-Agent": "Sovereign-AI-Agent/1.0"})
+        with urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            search_items = data.get("query", {}).get("search", [])
+            for item in search_items[:top_k]:
+                title = item.get("title", "")
+                snippet_html = item.get("snippet", "")
+                clean_snippet = re.sub(r"<[^>]+>", "", snippet_html).strip()
+                page_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+                results.append({
+                    "title": title,
+                    "snippet": clean_snippet,
+                    "url": page_url,
+                    "source": "Wikipedia"
+                })
+    except Exception:
+        pass
+
+    # 2. Query DuckDuckGo Instant Answer if needed
+    if len(results) < top_k:
+        try:
+            encoded_query = urllib.parse.quote(clean_query)
+            ddg_url = f"https://api.duckduckgo.com/?q={encoded_query}&format=json&no_html=1&skip_disambig=1"
+            req = Request(ddg_url, headers={"User-Agent": "Sovereign-AI-Agent/1.0"})
+            with urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                abstract = data.get("AbstractText", "").strip()
+                heading = data.get("Heading", "").strip()
+                abs_url = data.get("AbstractURL", "").strip()
+                if abstract:
+                    results.append({
+                        "title": heading or clean_query,
+                        "snippet": abstract,
+                        "url": abs_url,
+                        "source": "DuckDuckGo"
+                    })
+                for topic in data.get("RelatedTopics", []):
+                    if len(results) >= top_k:
+                        break
+                    text = topic.get("Text", "").strip()
+                    first_url = topic.get("FirstURL", "").strip()
+                    if text and first_url:
+                        results.append({
+                            "title": text[:60] + "..." if len(text) > 60 else text,
+                            "snippet": text,
+                            "url": first_url,
+                            "source": "DuckDuckGo"
+                        })
+        except Exception:
+            pass
+
+    return results[:top_k]
 
 # ============================================================
 # TOOL EXECUTOR
@@ -144,6 +240,20 @@ def execute_tool(tool_name: str, arguments: dict, base_url: str | None = None) -
             "count": len(results),
             "results": snippets,
             "raw_results": results,
+            "duration_sec": duration
+        }
+
+    elif tool_name == "web_search":
+        query = arguments.get("query", "")
+        top_k = arguments.get("top_k", 5)
+        results = perform_web_search(query, top_k=top_k)
+        duration = round(time.time() - start_time, 2)
+        return {
+            "success": len(results) > 0,
+            "tool": tool_name,
+            "query": query,
+            "count": len(results),
+            "results": results,
             "duration_sec": duration
         }
 
