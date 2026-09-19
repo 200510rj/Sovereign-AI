@@ -404,21 +404,31 @@ def search_knowledge(
 # ASK OLLAMA
 # ============================================================
 
+def is_local_instance(url: str | None = None) -> bool:
+    """Returns True if target instance is local loopback, False if Cloudflare tunnel or custom remote URL."""
+    target = (url or get_ollama_url()).lower()
+    return "127.0.0.1" in target or "localhost" in target or "::1" in target or "0.0.0.0" in target
+
+
 def ask_ollama(
     model: str,
     prompt: str,
     base_url: str | None = None
 ):
-    target_url = f"{(base_url or get_ollama_url())}/api/generate"
-    data = json.dumps({
+    target_base = (base_url or get_ollama_url()).rstrip("/")
+    target_url = f"{target_base}/api/generate"
+
+    # Uncapped tokens for Cloudflare Tunnel / Custom Remote URLs; constrained for local CPU
+    payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
         "think": False,
-        "options": {
-            "num_predict": 256
-        }
-    }).encode("utf-8")
+    }
+    if is_local_instance(target_base):
+        payload["options"] = {"num_predict": 256}
+
+    data = json.dumps(payload).encode("utf-8")
 
     request = Request(
         target_url,
@@ -447,16 +457,20 @@ def ask_ollama_chat(
     messages: list[dict],
     base_url: str | None = None
 ):
-    target_url = f"{(base_url or get_ollama_url())}/api/chat"
-    data = json.dumps({
+    target_base = (base_url or get_ollama_url()).rstrip("/")
+    target_url = f"{target_base}/api/chat"
+
+    # Uncapped tokens for Cloudflare Tunnel / Custom Remote URLs; constrained for local CPU
+    payload = {
         "model": model,
         "messages": messages,
         "stream": False,
         "think": False,
-        "options": {
-            "num_predict": 512
-        }
-    }).encode("utf-8")
+    }
+    if is_local_instance(target_base):
+        payload["options"] = {"num_predict": 512}
+
+    data = json.dumps(payload).encode("utf-8")
 
     request = Request(
         target_url,

@@ -145,20 +145,25 @@ import re
 def perform_web_search(query: str, top_k: int = 5) -> list[dict]:
     """
     Performs real web search using Wikipedia and DuckDuckGo search APIs.
-    Returns structured results with title, snippet, and source URL.
+    Gracefully falls back to local knowledge base if external network is air-gapped.
     """
+    import main
     results = []
     clean_query = (query or "").strip()
     if not clean_query:
         return []
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     # 1. Query Wikipedia Search API
     try:
         encoded_query = urllib.parse.quote(clean_query)
         wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_query}&utf8=&format=json"
-        req = Request(wiki_url, headers={"User-Agent": "Sovereign-AI-Agent/1.0"})
-        with urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        req = Request(wiki_url, headers=headers)
+        with urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
             search_items = data.get("query", {}).get("search", [])
             for item in search_items[:top_k]:
                 title = item.get("title", "")
@@ -179,9 +184,9 @@ def perform_web_search(query: str, top_k: int = 5) -> list[dict]:
         try:
             encoded_query = urllib.parse.quote(clean_query)
             ddg_url = f"https://api.duckduckgo.com/?q={encoded_query}&format=json&no_html=1&skip_disambig=1"
-            req = Request(ddg_url, headers={"User-Agent": "Sovereign-AI-Agent/1.0"})
-            with urlopen(req, timeout=8) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            req = Request(ddg_url, headers=headers)
+            with urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="ignore"))
                 abstract = data.get("AbstractText", "").strip()
                 heading = data.get("Heading", "").strip()
                 abs_url = data.get("AbstractURL", "").strip()
@@ -204,6 +209,20 @@ def perform_web_search(query: str, top_k: int = 5) -> list[dict]:
                             "url": first_url,
                             "source": "DuckDuckGo"
                         })
+        except Exception:
+            pass
+
+    # 3. Offline Sovereign Knowledge Base Fallback if internet unavailable
+    if not results:
+        try:
+            kb_chunks = main.search_knowledge(clean_query, top_k=top_k)
+            for c in kb_chunks:
+                results.append({
+                    "title": f"Local Document: {c.get('source', 'KB')}",
+                    "snippet": c.get("text", "")[:300],
+                    "url": f"local://knowledge_base/{c.get('source', '')}",
+                    "source": "Sovereign Local KB"
+                })
         except Exception:
             pass
 
@@ -361,6 +380,8 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
     collected_sources = []
     files_created = []
 
+    is_local = "127.0.0.1" in target_ollama.lower() or "localhost" in target_ollama.lower() or "::1" in target_ollama.lower()
+
     for step in range(1, max_steps + 1):
         payload = {
             "model": AGENT_MODEL,
@@ -368,11 +389,17 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
             "tools": TOOL_SCHEMAS,
             "stream": False,
             "think": False,
-            "options": {
+        }
+        # Uncapped tokens on Cloudflare Tunnel / Custom Remote URLs; constrained for local CPU
+        if is_local:
+            payload["options"] = {
                 "num_predict": 512,
                 "temperature": 0.2
             }
-        }
+        else:
+            payload["options"] = {
+                "temperature": 0.2
+            }
 
         req = Request(
             chat_url,
@@ -443,6 +470,15 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
                         "score": round(r.get("score", 0), 3),
                         "snippet": r.get("text", "")
                     })
+            elif fn_name == "web_search":
+                step_record["summary"] = f"Searched web: found {tool_output.get('count', 0)} results for '{fn_args.get('query', '')}'"
+                for r in tool_output.get("results", []):
+                    collected_sources.append({
+                        "id": len(collected_sources) + 1,
+                        "file": f"🌐 {r.get('title', 'Web Source')} ({r.get('source', 'Web')})",
+                        "score": 1.0,
+                        "snippet": r.get("snippet", "") + f"\nURL: {r.get('url', '')}"
+                    })
             elif fn_name == "execute_python_code":
                 stdout_preview = (tool_output.get("stdout") or "").strip()
                 stderr_preview = (tool_output.get("stderr") or "").strip()
@@ -480,12 +516,14 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
         "messages": messages,
         "stream": False,
         "think": False,
-        "options": {"num_predict": 512}
     }
+    if is_local:
+        final_payload["options"] = {"num_predict": 512}
+
     req = Request(
-        OLLAMA_CHAT_URL,
+        chat_url,
         data=json.dumps(final_payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
+        headers={"Content-Type": "application/json", "User-Agent": "Sovereign-AI"}
     )
     with urlopen(req, timeout=120) as resp:
         res = json.loads(resp.read().decode("utf-8"))
