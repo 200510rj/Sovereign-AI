@@ -98,13 +98,15 @@ sovereign-ai/
 
 ### Key functions
 
-- `select_route(prompt)` — keyword router: `coding_phrases` (write code, implement, debug/fix code, python/javascript/sql/html/css code…) → `coding`; else `document_phrases` (uploaded, document, pdf, sop, manual, resume, report, knowledge base, according to, inspection…) → `rag` (only used to pick coding vs non-coding; knowledge ON/OFF decides RAG vs general after that); else `general`.
+- `select_route(prompt)` — keyword router: `coding_phrases` → `coding`; `document_phrases` → `rag`; else `general`. `/chat` triggers RAG for both `knowledge_enabled=True` **and** `route=="rag"`.
 - `get_embedding` — `POST http://127.0.0.1:11434/api/embed` via urllib, timeout 120s.
-- `cosine_similarity`, `load_index`, `search_knowledge(query, top_k=5, min_score=0.20)` — filters below 0.20, returns id/source/text/score.
+- `cosine_similarity`, `load_index`, `search_knowledge(query, top_k=5, min_score=0.15)` — **hybrid scoring** (cosine similarity + keyword matching bonus + source filename bonus, capped at +0.35).
 - `ask_ollama` (generate API, num_predict 256, think False) / `ask_ollama_chat` (chat API, num_predict 512, history-aware).
-- `clean_ocr_text` — strips only outer wrapping ```` ``` ```` fences; `ocr_image` — `ollama.chat(glm-ocr:q8_0, images=[path])`, returns None on empty/exception.
-- `extract_text` — `.txt/.md` direct read; `.pdf` via pypdf; else ValueError.
-- `chunk_text(max_chars=1800)` — paragraph packing; `index_document` — embed each chunk, append to `kb_index.json`, return count.
+- `clean_ocr_text` — strips outer ```` ``` ```` fences; `ocr_image` — `ollama.chat(glm-ocr:q8_0, images=[path])`, returns None on empty/exception.
+- `normalize_pdf_text` — **NEW** — fixes PDF letter-spacing/kerning artifacts (e.g. `U T S A V  D H O B I` → `UTSAV DHOBI`). Detects single-char-spaced lines (>40% single chars), collapses double-space word separators + single-space char joiners.
+- `extract_text` — `.txt/.md` direct read; `.pdf` via pypdf **+ `normalize_pdf_text()`**; else ValueError.
+- `chunk_text(chunk_size=750, chunk_overlap=150)` — **sliding-window chunker** replaces old paragraph-packer. Oversized paragraphs get split with overlap. Min chunk length filter (>10 chars).
+- `index_document` — **deduplicates** (removes old chunks for same filename before adding new), embeds each chunk, writes to `kb_index.json`, syncs document metadata to SQLite `documents` table.
 
 ### Endpoints (all verified in code + frontend + tests)
 

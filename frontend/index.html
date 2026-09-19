@@ -10,10 +10,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 
-    <!-- Markdown & Highlight.js CDN with offline safety fallback -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <!-- Markdown & Highlight.js 100% Local Air-Gapped Vendor Assets -->
+    <script src="/vendor/marked.min.js"></script>
+    <link rel="stylesheet" href="/vendor/atom-one-dark.min.css">
+    <script src="/vendor/highlight.min.js"></script>
 
     <style>
         :root {
@@ -306,6 +306,29 @@
             border-color: rgba(156, 163, 175, 0.2);
         }
 
+        .pill-agent {
+            background: rgba(139, 92, 246, 0.2);
+            color: #c084fc;
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+
+        .pill-agent.off {
+            background: rgba(156, 163, 175, 0.1);
+            color: var(--text-dim);
+            border-color: rgba(156, 163, 175, 0.2);
+        }
+
+        .pill-airgap {
+            background: rgba(16, 185, 129, 0.12);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            font-size: 11px;
+            cursor: pointer;
+        }
+
         .nav-actions {
             display: flex;
             align-items: center;
@@ -489,6 +512,79 @@
             background: rgba(96, 165, 250, 0.15);
             color: #60a5fa;
             border: 1px solid rgba(96, 165, 250, 0.3);
+        }
+
+        .route-badge.agent {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(59, 130, 246, 0.25));
+            color: #c084fc;
+            border: 1px solid rgba(139, 92, 246, 0.4);
+        }
+
+        /* Agent Timeline Accordion */
+        .agent-timeline {
+            margin-top: 12px;
+            background: rgba(17, 24, 39, 0.8);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .agent-timeline-header {
+            padding: 10px 14px;
+            background: rgba(139, 92, 246, 0.12);
+            font-size: 13px;
+            font-weight: 600;
+            color: #c084fc;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+
+        .agent-timeline-body {
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .timeline-step {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 6px;
+            border-left: 3px solid #8b5cf6;
+        }
+
+        .step-num {
+            font-weight: 700;
+            color: #a78bfa;
+            font-size: 11px;
+        }
+
+        .step-tool {
+            background: rgba(139, 92, 246, 0.2);
+            color: #c084fc;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }
+
+        .step-summary {
+            flex: 1;
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .step-time {
+            color: var(--text-dim);
+            font-size: 11px;
         }
 
         /* Sources Accordion */
@@ -790,6 +886,14 @@
                     <span id="knowledgeDot">⚪</span>
                     <span id="knowledgeText">Knowledge Base OFF</span>
                 </div>
+                <div id="agentPill" class="pill-tag pill-agent off" onclick="toggleAgent()">
+                    <span id="agentDot">⚪</span>
+                    <span id="agentText">Agent Mode OFF</span>
+                </div>
+                <div id="airgapPill" class="pill-tag pill-airgap" onclick="checkNetworkAudit()">
+                    <span>🛡️</span>
+                    <span id="airgapText">Air-Gap: Checking...</span>
+                </div>
             </div>
             <div class="nav-actions">
                 <button class="action-btn" onclick="clearChat()">🧹 Clear</button>
@@ -801,7 +905,7 @@
             <div class="empty-state" id="emptyState">
                 <div class="empty-icon">🛡️</div>
                 <div class="empty-title">Enterprise On-Premise AI Workbench</div>
-                <div class="empty-subtitle">Your data, documents, and code execution strictly remain local. Ask questions, generate code, or query uploaded SOPs.</div>
+                <div class="empty-subtitle">Your data, documents, and code execution strictly remain local. Ask questions, generate code, or execute autonomous multi-step agent workflows.</div>
                 
                 <div class="prompt-suggestions">
                     <div class="suggestion-card" onclick="useSuggestion('Summarize key refinery inspection steps from the uploaded document')">
@@ -811,6 +915,10 @@
                     <div class="suggestion-card" onclick="useSuggestion('Write a Python script to calculate pressure drops in oil pipelines')">
                         <div class="suggestion-title">💻 Code Generation</div>
                         <div class="suggestion-desc">Auto-routes to Qwen 2.5 Coder</div>
+                    </div>
+                    <div class="suggestion-card" onclick="useSuggestion('Search the knowledge base for pump inspection requirements and generate a PDF report with the findings', true)">
+                        <div class="suggestion-title">🤖 Multi-Step Agent</div>
+                        <div class="suggestion-desc">Search KB + Generate PDF in one go</div>
                     </div>
                 </div>
             </div>
@@ -854,6 +962,7 @@
     const knowledgeText = document.getElementById('knowledgeText');
 
     let knowledgeEnabled = false;
+    let agentEnabled = false;
 
     function toggleKnowledge() {
         knowledgeEnabled = !knowledgeEnabled;
@@ -868,15 +977,57 @@
         }
     }
 
+    function toggleAgent() {
+        agentEnabled = !agentEnabled;
+        const agentPill = document.getElementById('agentPill');
+        const agentDot = document.getElementById('agentDot');
+        const agentText = document.getElementById('agentText');
+        if (agentEnabled) {
+            agentPill.classList.remove('off');
+            agentDot.textContent = '🟣';
+            agentText.textContent = 'Agent Mode ON';
+            showToast('🤖 Sovereign Agent Mode activated (Autonomous ReAct multi-tool loop)', 'success');
+            setTimeout(hideToast, 3500);
+        } else {
+            agentPill.classList.add('off');
+            agentDot.textContent = '⚪';
+            agentText.textContent = 'Agent Mode OFF';
+        }
+    }
+
+    async function checkNetworkAudit() {
+        try {
+            const res = await fetch('/network-status');
+            const data = await res.json();
+            const airgapText = document.getElementById('airgapText');
+            if (data.sovereign_verified) {
+                airgapText.textContent = 'Air-Gap: 100% Verified (0 Outbound)';
+                showToast(`🛡️ Air-Gap Verified: 0 external outbound calls from backend (PID ${data.details.backend_pid}). 100% local operation.`, 'success');
+            } else {
+                airgapText.textContent = `Air-Gap: ${data.backend_external_connections} External`;
+                showToast(`⚠️ Warning: ${data.backend_external_connections} external connections detected.`, 'error');
+            }
+            setTimeout(hideToast, 4000);
+        } catch (err) {
+            console.error('Network audit error:', err);
+        }
+    }
+
+    // Auto-run network audit on load and every 25 seconds
+    checkNetworkAudit();
+    setInterval(checkNetworkAudit, 25000);
+
     function clearChat() {
         chatFeed.innerHTML = '';
         chatFeed.appendChild(emptyState);
         emptyState.style.display = 'block';
     }
 
-    function useSuggestion(text) {
+    function useSuggestion(text, isAgent = false) {
         promptInput.value = text;
-        if (text.includes('document') || text.includes('SOP')) {
+        if (isAgent) {
+            if (!agentEnabled) toggleAgent();
+        } else if (text.includes('document') || text.includes('SOP')) {
             if (!knowledgeEnabled) toggleKnowledge();
         }
         promptInput.focus();
@@ -1016,13 +1167,16 @@
         // Add Loading Assistant Indicator
         const loadingId = appendLoadingBubble();
 
+        const endpoint = agentEnabled ? '/agent' : '/chat';
+
         try {
-            const res = await fetch('/chat', {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt: text,
                     knowledge_enabled: knowledgeEnabled,
+                    agent_mode: agentEnabled,
                     session_id: currentSessionId,
                     history: pastHistory
                 })
@@ -1067,7 +1221,10 @@
             let badgeClass = 'general';
             let badgeText = '🧠 General AI';
 
-            if (meta && meta.route === 'coding') {
+            if (meta && meta.route === 'agent') {
+                badgeClass = 'agent';
+                badgeText = `🤖 Sovereign Agent (${meta.model || 'qwen3.5:4b'})`;
+            } else if (meta && meta.route === 'coding') {
                 badgeClass = 'coding';
                 badgeText = `💻 Coding (${meta.model || 'qwen2.5-coder'})`;
             } else if (meta && meta.route === 'rag') {
@@ -1082,6 +1239,41 @@
                 renderedHtml = marked.parse(content);
             } else {
                 renderedHtml = escapeHtml(content);
+            }
+
+            let timelineHtml = '';
+            if (meta && meta.tool_log && meta.tool_log.length > 0) {
+                timelineHtml = `
+                    <div class="agent-timeline">
+                        <div class="agent-timeline-header">
+                            <span>🤖 Autonomous Execution Steps (${meta.tool_log.length})</span>
+                            <span style="font-size: 11px; opacity: 0.85;">ReAct Tool Loop ▾</span>
+                        </div>
+                        <div class="agent-timeline-body">
+                            ${meta.tool_log.map(step => `
+                                <div class="timeline-step">
+                                    <span class="step-num">Step ${step.step}</span>
+                                    <span class="step-tool">${escapeHtml(step.tool)}</span>
+                                    <span class="step-summary" title="${escapeHtml(step.summary || '')}">${escapeHtml(step.summary || '')}</span>
+                                    <span class="step-time">${step.duration_sec}s</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            let filesHtml = '';
+            if (meta && meta.files_created && meta.files_created.length > 0) {
+                filesHtml = `
+                    <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+                        ${meta.files_created.map(f => `
+                            <a href="${f.download_url}" target="_blank" class="action-btn" style="text-decoration: none; padding: 6px 12px; font-size: 12px; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #10b981; display: inline-flex; align-items: center; gap: 6px;">
+                                📥 Download ${f.format.toUpperCase()} (${escapeHtml(f.filename)})
+                            </a>
+                        `).join('')}
+                    </div>
+                `;
             }
 
             let sourcesHtml = '';
@@ -1118,6 +1310,8 @@
                         </div>
                     </div>
                     <div class="message-bubble">${renderedHtml}</div>
+                    ${timelineHtml}
+                    ${filesHtml}
                     ${sourcesHtml}
                 </div>
             `;

@@ -24,6 +24,9 @@ ppt/renders/
 Thumbs.db
 desktop.ini
 
-# Temporary data / reports
+# Temporary data / reports / archives
 data/reports/*
 !data/reports/.gitkeep
+*.zip
+test_ui.png
+
