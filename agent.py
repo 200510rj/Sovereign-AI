@@ -117,7 +117,7 @@ TOOL_SCHEMAS = [
 # TOOL EXECUTOR
 # ============================================================
 
-def execute_tool(tool_name: str, arguments: dict) -> dict:
+def execute_tool(tool_name: str, arguments: dict, base_url: str | None = None) -> dict:
     """Executes a requested tool locally using existing production logic."""
     import main  # Lazy import to avoid circular dependency
 
@@ -126,7 +126,7 @@ def execute_tool(tool_name: str, arguments: dict) -> dict:
     if tool_name == "search_knowledge_base":
         query = arguments.get("query", "")
         top_k = arguments.get("top_k", 5)
-        results = main.search_knowledge(query, top_k=top_k)
+        results = main.search_knowledge(query, top_k=top_k, base_url=base_url)
         
         snippets = []
         for r in results:
@@ -217,11 +217,16 @@ def execute_tool(tool_name: str, arguments: dict) -> dict:
 # REACT AGENT LOOP
 # ============================================================
 
-def run_agent(question: str, history: list = None, max_steps: int = 5) -> dict:
+def run_agent(question: str, history: list = None, max_steps: int = 5, base_url: str | None = None) -> dict:
     """
     Executes a dynamic ReAct agent loop using local Ollama model qwen3.5:4b.
     Allows multi-step tool calls, reasoning, and synthesis.
     """
+    import main
+
+    target_ollama = (base_url or main.get_ollama_url()).rstrip("/")
+    chat_url = f"{target_ollama}/api/chat"
+
     system_prompt = (
         "You are Sovereign Agent, an autonomous enterprise industrial AI assistant operating in a strictly air-gapped on-premise environment.\n"
         "You have access to local tools to search the knowledge base, read documents, execute Python code, and generate official reports.\n"
@@ -260,9 +265,12 @@ def run_agent(question: str, history: list = None, max_steps: int = 5) -> dict:
         }
 
         req = Request(
-            OLLAMA_CHAT_URL,
+            chat_url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Sovereign-AI"
+            }
         )
 
         try:
@@ -270,7 +278,7 @@ def run_agent(question: str, history: list = None, max_steps: int = 5) -> dict:
                 result = json.loads(resp.read().decode("utf-8"))
         except URLError as err:
             return {
-                "answer": f"ERROR: Agent failed to connect to Ollama: {err}",
+                "answer": f"ERROR: Agent failed to connect to Ollama at {chat_url}: {err}",
                 "tool_log": tool_log,
                 "sources": collected_sources,
                 "files_created": files_created
@@ -305,7 +313,7 @@ def run_agent(question: str, history: list = None, max_steps: int = 5) -> dict:
                     fn_args = {}
 
             # Execute tool locally
-            tool_output = execute_tool(fn_name, fn_args)
+            tool_output = execute_tool(fn_name, fn_args, base_url=target_ollama)
 
             # Record step in tool log
             step_record = {

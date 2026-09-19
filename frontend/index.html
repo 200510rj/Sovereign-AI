@@ -862,6 +862,28 @@
                     <span>🔍</span> Vector: nomic-embed-text
                 </div>
             </div>
+
+            <div class="section-label">Ollama Host / Tunnel</div>
+            <div class="model-card" style="margin-bottom: 14px;">
+                <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 6px;">Target Inference Instance:</div>
+                <select id="ollamaPresetSelect" onchange="onOllamaPresetChange()" style="width: 100%; padding: 7px 10px; background: var(--bg-dark); border: 1px solid var(--card-border); color: var(--text-main); border-radius: 6px; font-size: 12px; margin-bottom: 8px; outline: none; cursor: pointer;">
+                    <option value="http://127.0.0.1:11434">🖥️ Localhost (127.0.0.1:11434)</option>
+                    <option value="https://universe-hosts-spot-wizard.trycloudflare.com">☁️ Cloudflare Tunnel</option>
+                    <option value="custom">⚙️ Custom Remote URL...</option>
+                </select>
+                <div id="customOllamaInputContainer" style="display: none; margin-bottom: 8px;">
+                    <input type="text" id="customOllamaUrl" placeholder="https://your-tunnel.trycloudflare.com" style="width: 100%; padding: 6px 10px; background: var(--bg-dark); border: 1px solid var(--card-border); color: var(--text-main); border-radius: 6px; font-size: 11px; outline: none; font-family: var(--font-mono);">
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center; justify-content: space-between;">
+                    <button class="action-btn" id="btnTestOllama" style="padding: 4px 10px; font-size: 11px; flex: 1;" onclick="testAndSaveOllamaEndpoint()">
+                        ⚡ Test & Apply
+                    </button>
+                    <span id="ollamaStatusDot" style="font-size: 11px; color: var(--accent-green); font-weight: 600;">● Local</span>
+                </div>
+                <div id="ollamaModelsInfo" style="font-size: 10px; color: var(--text-dim); margin-top: 6px; word-break: break-all;">
+                    http://127.0.0.1:11434
+                </div>
+            </div>
         </div>
 
         <div class="sidebar-footer">
@@ -1092,12 +1114,116 @@
         fileInput.value = '';
     }
 
-    // Load documents and sessions on page load
+    // Load documents, sessions, and Ollama configuration on page load
     loadDocuments();
     loadSessions();
+    initOllamaConfig();
 
     let currentSessionId = null;
     let conversationHistory = [];
+    let activeOllamaUrl = localStorage.getItem('sovereign_ollama_url') || 'http://127.0.0.1:11434';
+
+    async function initOllamaConfig() {
+        try {
+            const res = await fetch('/config/ollama');
+            const data = await res.json();
+            if (data.current_url) {
+                activeOllamaUrl = localStorage.getItem('sovereign_ollama_url') || data.current_url;
+            }
+        } catch (e) {
+            console.warn('Could not fetch ollama config:', e);
+        }
+
+        const select = document.getElementById('ollamaPresetSelect');
+        const customContainer = document.getElementById('customOllamaInputContainer');
+        const customInput = document.getElementById('customOllamaUrl');
+        const info = document.getElementById('ollamaModelsInfo');
+
+        if (!select) return;
+
+        if (activeOllamaUrl === 'http://127.0.0.1:11434') {
+            select.value = 'http://127.0.0.1:11434';
+            customContainer.style.display = 'none';
+        } else if (activeOllamaUrl.includes('universe-hosts-spot-wizard.trycloudflare.com')) {
+            select.value = 'https://universe-hosts-spot-wizard.trycloudflare.com';
+            customContainer.style.display = 'none';
+        } else {
+            select.value = 'custom';
+            customContainer.style.display = 'block';
+            customInput.value = activeOllamaUrl;
+        }
+        if (info) info.textContent = activeOllamaUrl;
+    }
+
+    function onOllamaPresetChange() {
+        const select = document.getElementById('ollamaPresetSelect');
+        const customContainer = document.getElementById('customOllamaInputContainer');
+        const customInput = document.getElementById('customOllamaUrl');
+        
+        if (select.value === 'custom') {
+            customContainer.style.display = 'block';
+            customInput.focus();
+        } else {
+            customContainer.style.display = 'none';
+            activeOllamaUrl = select.value;
+            testAndSaveOllamaEndpoint();
+        }
+    }
+
+    async function testAndSaveOllamaEndpoint() {
+        const select = document.getElementById('ollamaPresetSelect');
+        const customInput = document.getElementById('customOllamaUrl');
+        const btn = document.getElementById('btnTestOllama');
+        const dot = document.getElementById('ollamaStatusDot');
+        const info = document.getElementById('ollamaModelsInfo');
+
+        let targetUrl = select.value === 'custom' ? customInput.value.trim() : select.value;
+        if (!targetUrl) {
+            alert('Please enter a valid URL.');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '⏳ Testing...';
+        dot.textContent = '🟡 Connecting...';
+        dot.style.color = '#f59e0b';
+
+        try {
+            const testRes = await fetch('/config/ollama/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: targetUrl })
+            });
+            const testData = await testRes.json();
+
+            if (testData.success) {
+                // Save to backend
+                await fetch('/config/ollama', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: testData.url })
+                });
+
+                activeOllamaUrl = testData.url;
+                localStorage.setItem('sovereign_ollama_url', activeOllamaUrl);
+
+                dot.textContent = `🟢 Online (${testData.model_count} models)`;
+                dot.style.color = 'var(--accent-green)';
+                info.textContent = `Target: ${activeOllamaUrl} (${testData.models.slice(0, 3).join(', ')})`;
+            } else {
+                dot.textContent = '🔴 Offline';
+                dot.style.color = '#ef4444';
+                info.textContent = `Error: ${testData.message || testData.error}`;
+            }
+        } catch (err) {
+            dot.textContent = '🔴 Error';
+            dot.style.color = '#ef4444';
+            info.textContent = `Failed: ${err.message}`;
+        }
+
+        btn.disabled = false;
+        btn.textContent = '⚡ Test & Apply';
+    }
 
     async function loadSessions() {
         const sessionList = document.getElementById('sessionList');
@@ -1178,7 +1304,8 @@
                     knowledge_enabled: knowledgeEnabled,
                     agent_mode: agentEnabled,
                     session_id: currentSessionId,
-                    history: pastHistory
+                    history: pastHistory,
+                    ollama_url: activeOllamaUrl
                 })
             });
 

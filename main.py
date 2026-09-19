@@ -37,6 +37,21 @@ GENERAL_MODEL = "qwen3.5:4b"
 CODING_MODEL = "qwen2.5-coder:7b"
 EMBED_MODEL = "nomic-embed-text:latest"
 
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+CURRENT_OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL)
+
+def get_ollama_url() -> str:
+    global CURRENT_OLLAMA_URL
+    return CURRENT_OLLAMA_URL.rstrip("/")
+
+def set_ollama_url(url: str) -> str:
+    global CURRENT_OLLAMA_URL
+    clean_url = (url or "").strip().rstrip("/")
+    if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
+        clean_url = "http://" + clean_url
+    CURRENT_OLLAMA_URL = clean_url
+    return CURRENT_OLLAMA_URL
+
 
 # ============================================================
 # STARTUP & DATABASE INIT
@@ -149,6 +164,10 @@ class ChatRequest(BaseModel):
     agent_mode: bool = False
     session_id: str | None = None
     history: list[MessageItem] = []
+    ollama_url: str | None = None
+
+class OllamaConfigRequest(BaseModel):
+    url: str
 
 
 
@@ -235,7 +254,9 @@ def select_route(prompt: str):
 # OLLAMA EMBEDDING
 # ============================================================
 
-def get_embedding(text: str):
+def get_embedding(text: str, base_url: str | None = None):
+
+    target_url = f"{(base_url or get_ollama_url())}/api/embed"
 
     data = json.dumps({
         "model": EMBED_MODEL,
@@ -243,10 +264,11 @@ def get_embedding(text: str):
     }).encode("utf-8")
 
     request = Request(
-        "http://127.0.0.1:11434/api/embed",
+        target_url,
         data=data,
         headers={
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Sovereign-AI"
         }
     )
 
@@ -315,7 +337,8 @@ def load_index():
 def search_knowledge(
     query,
     top_k=5,
-    min_score=0.15
+    min_score=0.15,
+    base_url: str | None = None
 ):
 
     chunks = load_index()
@@ -324,7 +347,8 @@ def search_knowledge(
         return []
 
     query_embedding = get_embedding(
-        query
+        query,
+        base_url=base_url
     )
 
     # Keywords for lexical bonus
@@ -378,9 +402,10 @@ def search_knowledge(
 
 def ask_ollama(
     model: str,
-    prompt: str
+    prompt: str,
+    base_url: str | None = None
 ):
-
+    target_url = f"{(base_url or get_ollama_url())}/api/generate"
     data = json.dumps({
         "model": model,
         "prompt": prompt,
@@ -392,36 +417,33 @@ def ask_ollama(
     }).encode("utf-8")
 
     request = Request(
-        "http://127.0.0.1:11434/api/generate",
+        target_url,
         data=data,
         headers={
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Sovereign-AI"
         }
     )
 
     try:
-
         with urlopen(
             request,
             timeout=180
         ) as response:
-
             result = json.loads(
                 response.read().decode("utf-8")
             )
-
         return result["response"]
-
-    except URLError:
-
-        return "ERROR: Ollama is not running."
+    except URLError as e:
+        return f"ERROR: Ollama is not accessible at {target_url}: {e}"
 
 
 def ask_ollama_chat(
     model: str,
-    messages: list[dict]
+    messages: list[dict],
+    base_url: str | None = None
 ):
-
+    target_url = f"{(base_url or get_ollama_url())}/api/chat"
     data = json.dumps({
         "model": model,
         "messages": messages,
@@ -433,10 +455,11 @@ def ask_ollama_chat(
     }).encode("utf-8")
 
     request = Request(
-        "http://127.0.0.1:11434/api/chat",
+        target_url,
         data=data,
         headers={
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Sovereign-AI"
         }
     )
 
@@ -454,8 +477,8 @@ def ask_ollama_chat(
         if not content and msg.get("thinking"):
             content = msg.get("thinking")
         return content or "No response generated."
-    except URLError:
-        return "ERROR: Ollama is not running."
+    except URLError as e:
+        return f"ERROR: Ollama is not accessible at {target_url}: {e}"
 
 
 
@@ -484,11 +507,11 @@ def clean_ocr_text(text: str):
     return cleaned.strip()
 
 
-def ocr_image(file_path: Path):
-
+def ocr_image(file_path: Path, base_url: str | None = None):
     try:
-
-        response = ollama.chat(
+        host = base_url or get_ollama_url()
+        client = ollama.Client(host=host)
+        response = client.chat(
             model="glm-ocr:q8_0",
             messages=[
                 {
@@ -1160,6 +1183,8 @@ def chat(
         question
     )
 
+    ollama_base = request.ollama_url or get_ollama_url()
+
     if route == "coding":
 
         messages = list(formatted_messages)
@@ -1167,7 +1192,8 @@ def chat(
 
         answer = ask_ollama_chat(
             CODING_MODEL,
-            messages
+            messages,
+            base_url=ollama_base
         )
 
         save_chat_message(session_id, "assistant", answer, route="coding", model=CODING_MODEL)
@@ -1189,7 +1215,8 @@ def chat(
 
         results = search_knowledge(
             question,
-            top_k=5
+            top_k=5,
+            base_url=ollama_base
         )
 
         context_parts = []
@@ -1219,7 +1246,8 @@ KNOWLEDGE BASE:
 
         answer = ask_ollama_chat(
             GENERAL_MODEL,
-            messages
+            messages,
+            base_url=ollama_base
         )
 
         sources = []
@@ -1256,7 +1284,8 @@ KNOWLEDGE BASE:
 
     answer = ask_ollama_chat(
         GENERAL_MODEL,
-        messages
+        messages,
+        base_url=ollama_base
     )
 
     save_chat_message(session_id, "assistant", answer, route="general", model=GENERAL_MODEL)
@@ -1300,7 +1329,8 @@ def agent_endpoint(request: ChatRequest):
     for item in request.history:
         formatted_history.append({"role": item.role, "content": item.content})
 
-    result = agent.run_agent(question, history=formatted_history)
+    ollama_base = request.ollama_url or get_ollama_url()
+    result = agent.run_agent(question, history=formatted_history, base_url=ollama_base)
 
     save_chat_message(
         session_id,
@@ -1319,6 +1349,53 @@ def agent_endpoint(request: ChatRequest):
         "sources": result.get("sources", []),
         "files_created": result.get("files_created", [])
     }
+
+
+# ============================================================
+# OLLAMA RUNTIME CONFIGURATION & PING ENDPOINTS
+# ============================================================
+
+@app.get("/config/ollama")
+def get_ollama_config():
+    return {
+        "current_url": get_ollama_url(),
+        "default_url": DEFAULT_OLLAMA_URL
+    }
+
+@app.post("/config/ollama")
+def set_ollama_config(req: OllamaConfigRequest):
+    new_url = set_ollama_url(req.url)
+    return {
+        "status": "updated",
+        "current_url": new_url
+    }
+
+@app.post("/config/ollama/test")
+def test_ollama_connection(req: OllamaConfigRequest):
+    test_url = (req.url or get_ollama_url()).strip().rstrip("/")
+    if not test_url.startswith("http://") and not test_url.startswith("https://"):
+        test_url = "http://" + test_url
+    
+    tags_url = f"{test_url}/api/tags"
+    try:
+        request = Request(tags_url, headers={"User-Agent": "Sovereign-AI"})
+        with urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            models = [m.get("name") for m in data.get("models", [])]
+            return {
+                "success": True,
+                "url": test_url,
+                "models": models,
+                "model_count": len(models),
+                "message": f"Successfully connected! {len(models)} models available."
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "url": test_url,
+            "error": str(e),
+            "message": f"Connection failed: {str(e)}"
+        }
 
 
 # ============================================================
