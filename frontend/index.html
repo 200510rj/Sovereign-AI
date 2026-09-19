@@ -321,6 +321,21 @@
             border-color: rgba(156, 163, 175, 0.2);
         }
 
+        .pill-websearch {
+            background: rgba(14, 165, 233, 0.2);
+            color: #38bdf8;
+            border: 1px solid rgba(14, 165, 233, 0.4);
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+
+        .pill-websearch.off {
+            background: rgba(156, 163, 175, 0.1);
+            color: var(--text-dim);
+            border-color: rgba(156, 163, 175, 0.2);
+        }
+
         .pill-airgap {
             background: rgba(16, 185, 129, 0.12);
             color: #34d399;
@@ -518,6 +533,12 @@
             background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(59, 130, 246, 0.25));
             color: #c084fc;
             border: 1px solid rgba(139, 92, 246, 0.4);
+        }
+
+        .route-badge.web_search {
+            background: rgba(14, 165, 233, 0.18);
+            color: #38bdf8;
+            border: 1px solid rgba(14, 165, 233, 0.35);
         }
 
         /* Agent Timeline Accordion */
@@ -908,6 +929,10 @@
                     <span id="knowledgeDot">⚪</span>
                     <span id="knowledgeText">Knowledge Base OFF</span>
                 </div>
+                <div id="webSearchPill" class="pill-tag pill-websearch off" onclick="toggleWebSearch()" title="Toggle Real-Time Web Search (Wikipedia + DuckDuckGo)">
+                    <span id="webSearchDot">⚪</span>
+                    <span id="webSearchText">Web Search OFF</span>
+                </div>
                 <div id="agentPill" class="pill-tag pill-agent off" onclick="toggleAgent()">
                     <span id="agentDot">⚪</span>
                     <span id="agentText">Agent Mode OFF</span>
@@ -927,12 +952,16 @@
             <div class="empty-state" id="emptyState">
                 <div class="empty-icon">🛡️</div>
                 <div class="empty-title">Enterprise On-Premise AI Workbench</div>
-                <div class="empty-subtitle">Your data, documents, and code execution strictly remain local. Ask questions, generate code, or execute autonomous multi-step agent workflows.</div>
+                <div class="empty-subtitle">Your data, documents, and code execution strictly remain local. Ask questions, search the web, generate code, or execute autonomous multi-step agent workflows.</div>
                 
                 <div class="prompt-suggestions">
                     <div class="suggestion-card" onclick="useSuggestion('Summarize key refinery inspection steps from the uploaded document')">
                         <div class="suggestion-title">📄 Document Inquiry</div>
                         <div class="suggestion-desc">Query indexed SOPs and PDFs</div>
+                    </div>
+                    <div class="suggestion-card" onclick="useSuggestion('Search the web for latest petrochemical safety guidelines 2026', false, true)">
+                        <div class="suggestion-title">🌐 Live Web Search</div>
+                        <div class="suggestion-desc">Wikipedia & DuckDuckGo Real-Time Search</div>
                     </div>
                     <div class="suggestion-card" onclick="useSuggestion('Write a Python script to calculate pressure drops in oil pipelines')">
                         <div class="suggestion-title">💻 Code Generation</div>
@@ -951,7 +980,7 @@
             <div id="statusToast" class="status-toast"></div>
 
             <div class="input-box">
-                <textarea id="promptInput" placeholder="Ask a question or request a coding task (Ctrl + Enter to send)..."></textarea>
+                <textarea id="promptInput" placeholder="Ask a question, search the web, or request a coding task (Ctrl + Enter to send)..."></textarea>
                 
                 <div class="input-actions">
                     <div class="left-actions">
@@ -959,6 +988,9 @@
                             <span>📄</span> Upload Document
                         </button>
                         <input type="file" id="fileInput" style="display: none;" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp" onchange="uploadFile()">
+                        <button class="action-btn" id="inputWebSearchBtn" onclick="toggleWebSearch()" title="Toggle Live Web Search">
+                            <span>🌐</span> <span id="inputWebSearchLabel">Web Search OFF</span>
+                        </button>
                     </div>
                     
                     <button class="send-btn" id="sendBtn" onclick="sendMessage()">
@@ -985,6 +1017,7 @@
 
     let knowledgeEnabled = false;
     let agentEnabled = false;
+    let webSearchEnabled = false;
 
     function toggleKnowledge() {
         knowledgeEnabled = !knowledgeEnabled;
@@ -996,6 +1029,39 @@
             knowledgePill.classList.add('off');
             knowledgeDot.textContent = '⚪';
             knowledgeText.textContent = 'Knowledge Base OFF';
+        }
+    }
+
+    function toggleWebSearch() {
+        webSearchEnabled = !webSearchEnabled;
+        const webPill = document.getElementById('webSearchPill');
+        const webDot = document.getElementById('webSearchDot');
+        const webText = document.getElementById('webSearchText');
+        const inputBtn = document.getElementById('inputWebSearchBtn');
+        const inputLabel = document.getElementById('inputWebSearchLabel');
+
+        if (webSearchEnabled) {
+            if (webPill) webPill.classList.remove('off');
+            if (webDot) webDot.textContent = '🌐';
+            if (webText) webText.textContent = 'Web Search ON';
+            if (inputBtn) {
+                inputBtn.style.background = 'rgba(14, 165, 233, 0.2)';
+                inputBtn.style.borderColor = 'rgba(14, 165, 233, 0.6)';
+                inputBtn.style.color = '#38bdf8';
+            }
+            if (inputLabel) inputLabel.textContent = 'Web Search ON';
+            showToast('🌐 Real-Time Web Search activated (Wikipedia & DuckDuckGo synthesis)', 'success');
+            setTimeout(hideToast, 3500);
+        } else {
+            if (webPill) webPill.classList.add('off');
+            if (webDot) webDot.textContent = '⚪';
+            if (webText) webText.textContent = 'Web Search OFF';
+            if (inputBtn) {
+                inputBtn.style.background = 'transparent';
+                inputBtn.style.borderColor = 'var(--panel-border)';
+                inputBtn.style.color = 'var(--text-muted)';
+            }
+            if (inputLabel) inputLabel.textContent = 'Web Search OFF';
         }
     }
 
@@ -1045,10 +1111,12 @@
         emptyState.style.display = 'block';
     }
 
-    function useSuggestion(text, isAgent = false) {
+    function useSuggestion(text, isAgent = false, isWebSearch = false) {
         promptInput.value = text;
         if (isAgent) {
             if (!agentEnabled) toggleAgent();
+        } else if (isWebSearch) {
+            if (!webSearchEnabled) toggleWebSearch();
         } else if (text.includes('document') || text.includes('SOP')) {
             if (!knowledgeEnabled) toggleKnowledge();
         }
@@ -1302,6 +1370,7 @@
                 body: JSON.stringify({
                     prompt: text,
                     knowledge_enabled: knowledgeEnabled,
+                    web_search_enabled: webSearchEnabled,
                     agent_mode: agentEnabled,
                     session_id: currentSessionId,
                     history: pastHistory,
@@ -1351,6 +1420,9 @@
             if (meta && meta.route === 'agent') {
                 badgeClass = 'agent';
                 badgeText = `🤖 Sovereign Agent (${meta.model || 'qwen3.5:4b'})`;
+            } else if (meta && meta.route === 'web_search') {
+                badgeClass = 'web_search';
+                badgeText = `🌐 Live Web Search (${meta.model || 'qwen3.5:4b'})`;
             } else if (meta && meta.route === 'coding') {
                 badgeClass = 'coding';
                 badgeText = `💻 Coding (${meta.model || 'qwen2.5-coder'})`;
@@ -1405,16 +1477,19 @@
 
             let sourcesHtml = '';
             if (meta && meta.sources && meta.sources.length > 0) {
+                const headerTitle = meta.route === 'web_search' 
+                    ? `🌐 Live Web Search Sources (${meta.sources.length}) — Click to view snippet` 
+                    : `📚 Retrieved Knowledge Sources (${meta.sources.length}) — Click to view snippet`;
                 sourcesHtml = `
                     <div class="sources-card">
-                        <div class="sources-header">📚 Retrieved Knowledge Sources (${meta.sources.length}) — Click to view snippet</div>
+                        <div class="sources-header">${headerTitle}</div>
                         <div class="sources-body">
                             ${meta.sources.map(s => {
                                 const snippetEsc = escapeHtml(s.snippet || '').replace(/'/g, "&apos;").replace(/"/g, "&quot;");
                                 const fileEsc = escapeHtml(s.file).replace(/'/g, "&apos;");
                                 return `
                                 <div class="source-item" style="cursor: pointer;" onclick="openChunkModal('${fileEsc}', '${s.score}', ${JSON.stringify(s.snippet || '')})">
-                                    <span class="source-file">📄 ${escapeHtml(s.file)}</span>
+                                    <span class="source-file">${escapeHtml(s.file)}</span>
                                     <span class="source-score">score: ${s.score} 🔍</span>
                                 </div>
                                 `;

@@ -162,6 +162,7 @@ class ChatRequest(BaseModel):
     message: str | None = None
     knowledge_enabled: bool = False
     agent_mode: bool = False
+    web_search_enabled: bool = False
     session_id: str | None = None
     history: list[MessageItem] = []
     ollama_url: str | None = None
@@ -1202,6 +1203,44 @@ def chat(
     )
 
     ollama_base = request.ollama_url or get_ollama_url()
+
+    # ========================================================
+    # LIVE WEB SEARCH MODE
+    # ========================================================
+
+    if request.web_search_enabled:
+        import agent
+        search_results = agent.perform_web_search(question, top_k=4)
+        context_parts = []
+        sources = []
+        for idx, res in enumerate(search_results):
+            context_parts.append(f"[{res.get('title')}] ({res.get('url')}):\n{res.get('snippet')}")
+            sources.append({
+                "id": idx + 1,
+                "file": f"🌐 {res.get('title')} ({res.get('source')})",
+                "score": 1.0,
+                "snippet": f"{res.get('snippet')}\nURL: {res.get('url')}"
+            })
+        
+        web_context = "\n\n".join(context_parts) if context_parts else "No web results found."
+        system_instruction = f"""You are an advanced enterprise AI assistant with live web search capabilities.
+Answer the user's question accurately using the live web search context below.
+Provide clear citations and factual information based on these search results.
+
+WEB SEARCH RESULTS:
+{web_context}"""
+
+        messages = [{"role": "system", "content": system_instruction}] + formatted_messages + [{"role": "user", "content": question}]
+        answer = ask_ollama_chat(GENERAL_MODEL, messages, base_url=ollama_base)
+        save_chat_message(session_id, "assistant", answer, route="web_search", model=GENERAL_MODEL)
+        return {
+            "session_id": session_id,
+            "model": GENERAL_MODEL,
+            "route": "web_search",
+            "knowledge_enabled": False,
+            "answer": answer,
+            "sources": sources
+        }
 
     if route == "coding":
 
