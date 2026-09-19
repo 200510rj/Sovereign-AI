@@ -1,0 +1,38 @@
+[
+  {
+    "category": "Missing/Weak Security Headers",
+    "title": "Absence of HTTP Security Headers",
+    "severity": "Low",
+    "status": "Remediation Identified",
+    "description": "The FastAPI server does not set defensive security headers: X-Content-Type-Options (Recommended: nosniff), X-Frame-Options (Recommended: DENY / SAMEORIGIN), Content-Security-Policy (Recommended: default-src 'self'), Strict-Transport-Security (Recommended: max-age=31536000), Referrer-Policy (Recommended: no-referrer).",
+    "impact": "Clickjacking or MIME-type sniffing risks if deployed beyond localhost.",
+    "remediation": "Add a custom FastAPI middleware injecting X-Frame-Options: DENY, X-Content-Type-Options: nosniff, and CSP headers."
+  },
+  {
+    "category": "SQL Injection (SQLi)",
+    "title": "Parameterized SQL Query Security",
+    "severity": "Informational",
+    "status": "Secure (No Vulnerability)",
+    "description": "All SQLite queries in main.py use parameterized statements with '?' placeholders.",
+    "impact": "Zero SQL injection vulnerability detected.",
+    "remediation": "Maintain strict parameterized query standards for any future database operations."
+  },
+  {
+    "category": "Insecure File Upload",
+    "title": "Strict File Extension Whitelisting",
+    "severity": "Low",
+    "status": "Secure with Hardening Recommended",
+    "description": "Backend enforces strict extension whitelisting (.pdf, .txt, .md, .png, .jpg, .jpeg, .webp). Executable files (.exe, .sh, .py, .php) are rejected.",
+    "impact": "Malicious script upload is blocked by extension filter.",
+    "remediation": "Add magic-byte (MIME sniffing) inspection using python-magic for defense-in-depth."
+  },
+  {
+    "category": "Cross-Site Scripting (XSS)",
+    "title": "DOM XSS Sanitization & Escaping",
+    "severity": "Informational",
+    "status": "Secure (Proper Escaping)",
+    "description": "All user-generated prompts and assistant snippets are passed through escapeHtml() before DOM insertion.",
+    "impact": "Reflected and stored XSS vectors are neutralized.",
+    "remediation": "Optionally enable DOMPurify on marked.js output for multi-tier defense."
+  }
+]
