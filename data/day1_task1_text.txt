@@ -1,0 +1,26 @@
+ Internal SIH 2026 - Task Details 
+ DAY 1 
+ IDEA FINALIZATION, SYSTEM DESIGN & FRONTEND PROTOTYPE 
+ Task 1 — Problem Understanding, Solution Planning & System Design 
+ Objective:  Convert the SIH problem statement into  a clear, feasible, and implementable solution 
+ and define the technical structure before development. 
+ Teams must prepare: 
+ ●  Problem statement understanding 
+ ●  Proposed solution 
+ ●  Unique Key features 
+ ●  Target users 
+ ●  System Architecture 
+ ●  Workflow/User Flow Diagram 
+ ●  Data Flow Diagram 
+ ●  Module Definition 
+ ●  Technology Stack 
+ Mentor Review: 
+ ●  Problem–solution alignment 
+ ●  Technical feasibility 
+ ●  Architecture and technology choices 
+ ●  System Architecture 
+ ●  Workflow/User Flow Diagram 
+ ●  Data Flow Diagram 
+ ●  Scalability 
+ ●  Module clarity 
+ ●  Innovation/uniqueness 

@@ -501,7 +501,7 @@ def ask_ollama_chat(
         "think": False,
     }
     if is_local_instance(target_base):
-        payload["options"] = {"num_predict": 512}
+        payload["options"] = {"num_predict": 1024, "num_ctx": 8192}
 
     data = json.dumps(payload).encode("utf-8")
 
@@ -679,8 +679,12 @@ def extract_text(file_path: Path):
         return normalize_pdf_text(raw_text)
 
 
+    if extension in [".png", ".jpg", ".jpeg", ".webp", ".bmp"]:
+        text = ocr_image(file_path)
+        return text or "[OCR could not extract text from image]"
+
     raise ValueError(
-        "Only TXT, MD, and PDF files are supported."
+        f"Unsupported file type: {extension}"
     )
 
 
@@ -1511,13 +1515,14 @@ def test_ollama_connection(req: OllamaConfigRequest):
 
 @app.post("/search")
 def search_endpoint(request: SearchRequest):
-    import agent
-    results = agent.perform_web_search(request.query, top_k=request.top_k)
+    import web_search_tool
+    results = web_search_tool.search_web(request.query, max_results=request.top_k)
     return {
         "query": request.query,
         "count": len(results),
         "results": results
     }
+
 
 
 # ============================================================

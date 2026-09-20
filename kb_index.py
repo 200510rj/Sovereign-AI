@@ -39,9 +39,15 @@ def load_chunks():
         if not file.is_file():
             continue
 
-        text = file.read_text(
-            encoding="utf-8"
-        )
+        try:
+            import main
+            text = main.extract_text(file)
+        except Exception as err:
+            print(f"Skipping {file.name}: {err}")
+            continue
+
+        if not text or not text.strip():
+            continue
 
         # Split the document into logical sections.
         sections = [
