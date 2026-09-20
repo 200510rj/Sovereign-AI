@@ -77,10 +77,12 @@ Industrial refining, petrochemical, and critical infrastructure facilities deal 
 ## 🚀 Quick Start Guide
 
 ### 1. Prerequisites
-- **Python 3.10+**
-- **Ollama** installed and running locally
+- **Python 3.10+** ([python.org](https://www.python.org/downloads/))
+- **Git** ([git-scm.com](https://git-scm.com/))
+- **Ollama** installed and running locally ([ollama.com](https://ollama.com/)) *(Optional if connecting to a remote Ollama / Cloudflare tunnel instance)*
 
-### 2. Pull Required Open-Weight Models
+### 2. Pull Required Open-Weight Models (Local Mode)
+If running inference 100% locally on your machine, pull the following models:
 ```powershell
 ollama pull qwen3.5:4b
 ollama pull qwen2.5-coder:7b
@@ -88,14 +90,23 @@ ollama pull nomic-embed-text
 ollama pull glm-ocr:q8_0
 ```
 
-### 3. Clone Repository & Setup Environment
+### 3. Clone Repository & Setup Virtual Environment
 ```powershell
+# Clone the repository
 git clone https://github.com/200510rj/Sovereign-AI.git
 cd Sovereign-AI
 
+# Create and activate a virtual environment
+# On Windows (PowerShell):
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install fastapi uvicorn pydantic pypdf ollama reportlab python-docx openpyxl pytest httpx psutil
+
+# On Linux / macOS:
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install all dependencies
+pip install -r requirements.txt
 ```
 
 ### 4. Launch Sovereign AI Backend
@@ -107,6 +118,20 @@ Open your browser and navigate to: **`http://127.0.0.1:8000`**
 
 ---
 
+### 🌐 Inference Modes & Target Endpoint Configuration
+
+The Sovereign AI Workbench supports dual operating modes:
+
+1. **100% Local / Air-Gapped Mode (Default):**
+   - Targets `http://127.0.0.1:11434` with strictly local Ollama execution and 0 outbound internet calls.
+   - Built-in live network auditor (`GET /network-status`) continuously monitors active sockets.
+2. **Remote / Cloudflare Tunnel Mode:**
+   - Use the **Target Inference Instance** panel in the left sidebar to enter any remote Ollama or Cloudflare tunnel URL (e.g. `https://your-tunnel.trycloudflare.com`).
+   - Click **⚡ Test & Apply** to verify connection and model inventory.
+   - Output token limits (`num_predict`) are automatically uncapped for high-throughput remote GPU inference.
+
+---
+
 ## 🧪 Test-Driven Development (TDD) Suite
 
 Run the full automated test suite covering all modules:
@@ -114,10 +139,12 @@ Run the full automated test suite covering all modules:
 python -m pytest tests/ -v
 ```
 
-### Test Suite Structure (12 Tests · 100% Pass Rate):
+### Test Suite Structure (19 Tests · 100% Pass Rate):
 - `tests/test_agent.py`: Validates individual tool execution (`search_knowledge_base`, `execute_python_code`, `generate_report`, `read_uploaded_document`) and `/agent` endpoint.
+- `tests/test_ollama_config.py`: Validates runtime Ollama endpoint configuration, Cloudflare tunnel connectivity, and dynamic token uncap logic.
 - `tests/test_previous_phases.py`: Validates `/documents`, SQLite session lifecycle (`/sessions`), and sandboxed code execution (`/execute_code`).
 - `tests/test_report_generator.py`: Validates `.pdf`, `.docx`, and `.xlsx` document generation and file download endpoints.
+- `tests/test_web_search.py`: Validates multi-source web search synthesis (`/search`), fallback mechanisms, and agent tool execution.
 
 ---
 
@@ -130,6 +157,10 @@ python -m pytest tests/ -v
 | `POST` | `/upload` | Uploads and processes `.pdf`, `.txt`, `.md`, or image files with OCR |
 | `POST` | `/chat` | Multi-turn conversational chat with automatic tool/model routing |
 | `POST` | `/agent` | Autonomous ReAct agent loop executing multi-step tool calls |
+| `POST` | `/search` | Real-time multi-source web search query synthesis |
+| `GET` | `/config/ollama` | Gets the active Ollama inference endpoint URL |
+| `POST` | `/config/ollama` | Sets the active Ollama inference endpoint URL |
+| `POST` | `/config/ollama/test` | Tests connectivity and model inventory of any Ollama endpoint |
 | `GET` | `/network-status` | Real-time air-gap connection auditor verifying 0 external network calls |
 | `GET` | `/sessions` | Lists all stored chat conversation sessions |
 | `GET` | `/sessions/{id}/messages` | Fetches historical messages for a given session |
@@ -145,3 +176,4 @@ python -m pytest tests/ -v
 - **Problem Statement ID:** PS 26117
 - **Target Organization:** Mangalore Refinery and Petrochemicals Limited (MRPL)
 - **License:** MIT License
+
