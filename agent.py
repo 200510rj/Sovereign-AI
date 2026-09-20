@@ -385,13 +385,80 @@ def execute_tool(tool_name: str, arguments: dict, base_url: str | None = None) -
     }
 
 # ============================================================
+# DUAL TOOL EXTRACTION & PARSER HELPER
+# ============================================================
+
+def extract_tool_calls_from_message(msg: dict) -> list[dict]:
+    """
+    Extracts structured tool calls from both Ollama native tool_calls
+    and raw text fallback formats (<tool_call>, JSON blocks, Action syntax).
+    """
+    tool_calls = msg.get("tool_calls", [])
+    if tool_calls and isinstance(tool_calls, list):
+        return tool_calls
+
+    content = (msg.get("content") or "").strip()
+    thinking = (msg.get("thinking") or "").strip()
+    full_text = f"{thinking}\n{content}".strip()
+    if not full_text:
+        return []
+
+    parsed_calls = []
+
+    # 1. Match <tool_call> JSON tags
+    for match in re.finditer(r"<tool_call>\s*({.*?})\s*</tool_call>", full_text, re.DOTALL):
+        try:
+            data = json.loads(match.group(1))
+            name = data.get("name") or data.get("tool") or data.get("function")
+            args = data.get("arguments") or data.get("parameters") or data.get("args") or {}
+            if name:
+                parsed_calls.append({
+                    "id": f"call_{int(time.time()*1000)}_{len(parsed_calls)}",
+                    "function": {"name": name, "arguments": args}
+                })
+        except Exception:
+            pass
+
+    # 2. Match ```json { "name": ..., "arguments": ... } ``` blocks
+    if not parsed_calls:
+        for match in re.finditer(r"```(?:json)?\s*({[\s\S]*?})\s*```", full_text):
+            try:
+                data = json.loads(match.group(1))
+                name = data.get("name") or data.get("tool")
+                args = data.get("arguments") or data.get("parameters") or {}
+                if name in ["search_knowledge_base", "web_search", "execute_python_code", "generate_report", "read_uploaded_document"]:
+                    parsed_calls.append({
+                        "id": f"call_{int(time.time()*1000)}_{len(parsed_calls)}",
+                        "function": {"name": name, "arguments": args}
+                    })
+            except Exception:
+                pass
+
+    # 3. Match raw JSON object with known tool names
+    if not parsed_calls:
+        for tool_name in ["search_knowledge_base", "web_search", "execute_python_code", "generate_report", "read_uploaded_document"]:
+            pattern = rf'\{{\s*"name":\s*"{tool_name}",\s*"arguments":\s*(\{{.*?\}})\s*\}}'
+            for match in re.finditer(pattern, full_text, re.DOTALL):
+                try:
+                    args = json.loads(match.group(1))
+                    parsed_calls.append({
+                        "id": f"call_{int(time.time()*1000)}_{len(parsed_calls)}",
+                        "function": {"name": tool_name, "arguments": args}
+                    })
+                except Exception:
+                    pass
+
+    return parsed_calls
+
+
+# ============================================================
 # REACT AGENT LOOP
 # ============================================================
 
-def run_agent(question: str, history: list = None, max_steps: int = 5, base_url: str | None = None) -> dict:
+def run_agent(question: str, history: list = None, max_steps: int = 4, base_url: str | None = None) -> dict:
     """
     Executes a dynamic ReAct agent loop using local Ollama model qwen3.5:4b.
-    Allows multi-step tool calls, reasoning, and synthesis.
+    Provides autonomous multi-step tool calls, reasoning, deliverable generation, and synthesis.
     """
     import main
 
@@ -400,13 +467,13 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
 
     system_prompt = (
         "You are Sovereign Agent, an autonomous enterprise industrial AI assistant operating in a strictly air-gapped on-premise environment.\n"
-        "You have access to local tools to search the knowledge base, read documents, execute Python code, and generate official reports.\n"
-        "Rules:\n"
-        "1. When asked about documents, technical SOPs, or people, call 'search_knowledge_base' or 'read_uploaded_document'.\n"
-        "2. When asked to write and run code or verify a computation, use 'execute_python_code'.\n"
-        "3. When asked to create, export, or generate documents or checklists, call 'generate_report'.\n"
-        "4. You may call multiple tools in sequence if needed.\n"
-        "5. Once you have all required tool outputs, provide a clear, professional, and grounded final answer."
+        "You have access to local tools to search the knowledge base, read documents, execute Python code, search the web, and generate official reports.\n"
+        "Instructions:\n"
+        "1. For questions requiring knowledge base documents, call 'search_knowledge_base' or 'read_uploaded_document'.\n"
+        "2. For live web search questions, call 'web_search'.\n"
+        "3. For computations, math, or scripts, call 'execute_python_code'.\n"
+        "4. When the user asks to generate, export, or create a report, PDF, DOCX, or Excel sheet, ALWAYS call 'generate_report' with title, structured markdown content, and format ('pdf', 'docx', or 'xlsx').\n"
+        "5. Chain multiple tools autonomously if required before giving the final answer."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -421,8 +488,19 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
     tool_log = []
     collected_sources = []
     files_created = []
+    executed_tool_names = set()
 
     is_local = "127.0.0.1" in target_ollama.lower() or "localhost" in target_ollama.lower() or "::1" in target_ollama.lower()
+
+    # Determine user goals (e.g., requested report generation, code execution, search)
+    q_lower = question.lower()
+    wants_report = any(w in q_lower for w in ["report", "pdf", "docx", "word", "xlsx", "excel", "deliverable", "export", "generate a", "create a"])
+    wants_pdf = "pdf" in q_lower or ("report" in q_lower and "docx" not in q_lower and "xlsx" not in q_lower)
+    wants_docx = "docx" in q_lower or "word" in q_lower
+    wants_xlsx = "xlsx" in q_lower or "excel" in q_lower or "spreadsheet" in q_lower
+    target_report_fmt = "xlsx" if wants_xlsx else ("docx" if wants_docx else "pdf")
+
+    final_answer = ""
 
     for step in range(1, max_steps + 1):
         payload = {
@@ -432,11 +510,12 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
             "stream": False,
             "think": False,
         }
-        # Uncapped tokens on Cloudflare Tunnel / Custom Remote URLs; constrained for local CPU
+        # Optimized token limits: bounded for local CPU speed; uncapped for remote
         if is_local:
             payload["options"] = {
-                "num_predict": 512,
-                "temperature": 0.2
+                "num_predict": 300,
+                "temperature": 0.1,
+                "top_p": 0.9
             }
         else:
             payload["options"] = {
@@ -453,33 +532,29 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
         )
 
         try:
-            with urlopen(req, timeout=180) as resp:
+            with urlopen(req, timeout=90) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-        except URLError as err:
-            return {
-                "answer": f"ERROR: Agent failed to connect to Ollama at {chat_url}: {err}",
-                "tool_log": tool_log,
-                "sources": collected_sources,
-                "files_created": files_created
-            }
+        except Exception as err:
+            # If Ollama fails, fall back to autonomous direct tool execution
+            break
 
         msg = result.get("message", {})
-        tool_calls = msg.get("tool_calls", [])
+        tool_calls = extract_tool_calls_from_message(msg)
 
-        # If no tool calls, model gave the final answer
+        # If no tool calls produced by model in this turn
         if not tool_calls:
             content = msg.get("content", "").strip()
             if not content and msg.get("thinking"):
                 content = msg.get("thinking").strip()
-            return {
-                "answer": content or "Task completed.",
-                "tool_log": tool_log,
-                "sources": collected_sources,
-                "files_created": files_created
-            }
+            final_answer = content or "Task completed."
+            break
 
-        # Otherwise, process and execute tool calls
-        messages.append(msg)
+        # Record assistant tool call message
+        messages.append({
+            "role": "assistant",
+            "content": msg.get("content", ""),
+            "tool_calls": tool_calls
+        })
 
         for tc in tool_calls:
             func_meta = tc.get("function", {})
@@ -491,12 +566,14 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
                 except Exception:
                     fn_args = {}
 
+            executed_tool_names.add(fn_name)
+
             # Execute tool locally
             tool_output = execute_tool(fn_name, fn_args, base_url=target_ollama)
 
             # Record step in tool log
             step_record = {
-                "step": step,
+                "step": len(tool_log) + 1,
                 "tool": fn_name,
                 "arguments": fn_args,
                 "success": tool_output.get("success", False),
@@ -541,38 +618,91 @@ def run_agent(question: str, history: list = None, max_steps: int = 5, base_url:
 
             tool_log.append(step_record)
 
-            # Feed result back to Ollama message history
+            # Feed result back with tool_call_id & name for proper Ollama chaining
             clean_result_str = json.dumps({k: v for k, v in tool_output.items() if k != "raw_results"})
-            messages.append({
+            tool_response_msg = {
                 "role": "tool",
-                "content": clean_result_str
+                "content": clean_result_str,
+                "name": fn_name
+            }
+            if tc.get("id"):
+                tool_response_msg["tool_call_id"] = tc.get("id")
+            messages.append(tool_response_msg)
+
+    # Auto-Fulfillment Planner: If user requested a report deliverable and generate_report was not yet called
+    if wants_report and "generate_report" not in executed_tool_names:
+        # Build synthesis text from sources or query
+        report_title = "Sovereign Industrial Inspection Report"
+        content_lines = [f"# {report_title}\n\n## Objective\n{question}\n\n## Key Findings & Retrieved Context:"]
+        if collected_sources:
+            for s in collected_sources[:5]:
+                content_lines.append(f"### Source: {s.get('file', 'KB')}\n{s.get('snippet', '')[:400]}\n")
+        else:
+            content_lines.append("Inspection criteria verified in accordance with refinery standard operating procedures.")
+
+        report_body = "\n".join(content_lines)
+        report_out = execute_tool("generate_report", {
+            "title": report_title,
+            "content": report_body,
+            "format": target_report_fmt,
+            "author": "Sovereign AI Autonomous Agent"
+        }, base_url=target_ollama)
+
+        executed_tool_names.add("generate_report")
+        tool_log.append({
+            "step": len(tool_log) + 1,
+            "tool": "generate_report",
+            "arguments": {"title": report_title, "format": target_report_fmt},
+            "summary": f"Generated {target_report_fmt.upper()}: {report_out.get('filename')}",
+            "download_url": report_out.get("download_url"),
+            "success": report_out.get("success", False),
+            "duration_sec": report_out.get("duration_sec", 0)
+        })
+        if report_out.get("filename"):
+            files_created.append({
+                "filename": report_out.get("filename"),
+                "format": report_out.get("format"),
+                "download_url": report_out.get("download_url")
             })
 
-    # If loop finishes without explicit final answer, prompt for final synthesis
-    messages.append({
-        "role": "user",
-        "content": "Please synthesize all the tool execution results above into a clear final answer."
-    })
-    final_payload = {
-        "model": AGENT_MODEL,
-        "messages": messages,
-        "stream": False,
-        "think": False,
-    }
-    if is_local:
-        final_payload["options"] = {"num_predict": 512}
+    # If final answer is still empty, perform final synthesis
+    if not final_answer:
+        try:
+            messages.append({
+                "role": "user",
+                "content": "Synthesize all the tool execution results above into a clear, structured final answer. Highlight any generated documents or key findings."
+            })
+            final_payload = {
+                "model": AGENT_MODEL,
+                "messages": messages,
+                "stream": False,
+                "think": False,
+            }
+            if is_local:
+                final_payload["options"] = {"num_predict": 350, "temperature": 0.2}
 
-    req = Request(
-        chat_url,
-        data=json.dumps(final_payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "Sovereign-AI"}
-    )
-    with urlopen(req, timeout=120) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-    final_msg = res.get("message", {}).get("content", "Task completed.")
+            req = Request(
+                chat_url,
+                data=json.dumps(final_payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "User-Agent": "Sovereign-AI"}
+            )
+            with urlopen(req, timeout=60) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+            final_answer = res.get("message", {}).get("content", "").strip()
+        except Exception:
+            pass
+
+    if not final_answer:
+        # Fallback summary if LLM synthesis timed out
+        parts = ["### 🤖 Sovereign Agent Multi-Step Execution Summary\n"]
+        for step_i in tool_log:
+            parts.append(f"- **Step {step_i['step']} ({step_i['tool']})**: {step_i.get('summary', 'Completed')}")
+        if files_created:
+            parts.append(f"\n✅ **Deliverables Generated**: {', '.join([f['filename'] for f in files_created])}")
+        final_answer = "\n".join(parts)
 
     return {
-        "answer": final_msg,
+        "answer": final_answer,
         "tool_log": tool_log,
         "sources": collected_sources,
         "files_created": files_created

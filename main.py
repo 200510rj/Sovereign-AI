@@ -185,6 +185,38 @@ def select_route(prompt: str):
     prompt_lower = prompt.lower().strip()
 
     # ========================================================
+    # AGENTIC MULTI-STEP REQUEST
+    # ========================================================
+
+    agent_phrases = [
+        "generate a pdf",
+        "generate pdf",
+        "generate a docx",
+        "generate docx",
+        "generate a report",
+        "generate report",
+        "create a pdf",
+        "create pdf",
+        "create report",
+        "make a pdf",
+        "export report",
+        "export pdf",
+        "search and generate",
+        "search and create",
+        "search the knowledge base and",
+        "search kb and",
+        "search the web and generate",
+        "multi-step",
+        "agent mode"
+    ]
+
+    if any(
+        phrase in prompt_lower
+        for phrase in agent_phrases
+    ):
+        return "agent"
+
+    # ========================================================
     # CODING REQUEST
     # ========================================================
 
@@ -1203,6 +1235,24 @@ def chat(
     )
 
     ollama_base = request.ollama_url or get_ollama_url()
+
+    # ========================================================
+    # AUTONOMOUS AGENTIC WORKFLOW
+    # ========================================================
+
+    if request.agent_mode or route == "agent":
+        import agent
+        result = agent.run_agent(question, history=formatted_messages, base_url=ollama_base)
+        save_chat_message(session_id, "assistant", result.get("answer", ""), route="agent", model="qwen3.5:4b")
+        return {
+            "session_id": session_id,
+            "model": "qwen3.5:4b",
+            "route": "agent",
+            "answer": result.get("answer", ""),
+            "tool_log": result.get("tool_log", []),
+            "sources": result.get("sources", []),
+            "files_created": result.get("files_created", [])
+        }
 
     # ========================================================
     # LIVE WEB SEARCH MODE
