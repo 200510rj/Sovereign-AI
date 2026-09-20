@@ -138,14 +138,18 @@ TOOL_SCHEMAS = [
 # ============================================================
 # WEB SEARCH HELPER
 # ============================================================
+# WEB SEARCH HELPER (DUCKDUCKGO LITE + WIKIPEDIA + AIRGAP FALLBACK)
+# ============================================================
 
 import urllib.parse
 import re
 
 def perform_web_search(query: str, top_k: int = 5) -> list[dict]:
     """
-    Performs real web search using Wikipedia and DuckDuckGo search APIs.
-    Gracefully falls back to local knowledge base if external network is air-gapped.
+    Performs live web search across the entire internet using:
+    1. DuckDuckGo Lite (POST web scraper for general websites, news, PDFs, guidelines)
+    2. Wikipedia Search API (for encyclopedic & technical concepts)
+    3. Graceful fallback to Sovereign Local Knowledge Base if air-gapped / offline.
     """
     import main
     results = []
@@ -153,66 +157,104 @@ def perform_web_search(query: str, top_k: int = 5) -> list[dict]:
     if not clean_query:
         return []
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    browser_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Referer": "https://lite.duckduckgo.com/",
+        "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 1. Query Wikipedia Search API
+    # 1. Primary Engine: DuckDuckGo Lite Web Search
     try:
-        encoded_query = urllib.parse.quote(clean_query)
-        wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_query}&utf8=&format=json"
-        req = Request(wiki_url, headers=headers)
-        with urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-            search_items = data.get("query", {}).get("search", [])
-            for item in search_items[:top_k]:
-                title = item.get("title", "")
-                snippet_html = item.get("snippet", "")
-                clean_snippet = re.sub(r"<[^>]+>", "", snippet_html).strip()
-                page_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
-                results.append({
-                    "title": title,
-                    "snippet": clean_snippet,
-                    "url": page_url,
-                    "source": "Wikipedia"
-                })
+        data = urllib.parse.urlencode({"q": clean_query}).encode("utf-8")
+        req = Request("https://lite.duckduckgo.com/lite/", data=data, headers=browser_headers)
+        with urlopen(req, timeout=6) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+            
+            # Try BeautifulSoup parser if available
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html, "html.parser")
+                links = soup.find_all("a", class_="result-link")
+                snippets = soup.find_all("td", class_="result-snippet")
+                for i in range(min(len(links), top_k)):
+                    title = links[i].get_text(strip=True)
+                    href = links[i].get("href", "")
+                    snip = snippets[i].get_text(strip=True) if i < len(snippets) else ""
+                    if title and href:
+                        results.append({
+                            "title": title,
+                            "snippet": snip,
+                            "url": href,
+                            "source": "DuckDuckGo"
+                        })
+            except Exception:
+                # Regex fallback parser for DDG Lite
+                link_matches = re.findall(r'<a[^>]+class=[\'"]result-link[\'"][^>]+href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)</a>', html, re.DOTALL)
+                snip_matches = re.findall(r'<td[^>]+class=[\'"]result-snippet[\'"][^>]*>(.*?)</td>', html, re.DOTALL)
+                for i in range(min(len(link_matches), top_k)):
+                    href, raw_title = link_matches[i]
+                    title = re.sub(r"<[^>]+>", "", raw_title).strip()
+                    raw_snip = snip_matches[i] if i < len(snip_matches) else ""
+                    snip = re.sub(r"<[^>]+>", "", raw_snip).strip()
+                    if title and href:
+                        results.append({
+                            "title": title,
+                            "snippet": snip,
+                            "url": href,
+                            "source": "DuckDuckGo"
+                        })
     except Exception:
         pass
 
-    # 2. Query DuckDuckGo Instant Answer if needed
+    # 2. Secondary Engine: Wikipedia Search API
+    if len(results) < top_k:
+        try:
+            encoded_query = urllib.parse.quote(clean_query)
+            wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_query}&utf8=&format=json"
+            req = Request(wiki_url, headers={"User-Agent": "Sovereign-AI/1.0 (Enterprise Industrial Assistant)"})
+            with urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                search_items = data.get("query", {}).get("search", [])
+                for item in search_items:
+                    if len(results) >= top_k:
+                        break
+                    title = item.get("title", "")
+                    snippet_html = item.get("snippet", "")
+                    clean_snippet = re.sub(r"<[^>]+>", "", snippet_html).strip()
+                    page_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+                    # Avoid duplicate titles
+                    if not any(r["title"].lower() == title.lower() for r in results):
+                        results.append({
+                            "title": title,
+                            "snippet": clean_snippet,
+                            "url": page_url,
+                            "source": "Wikipedia"
+                        })
+        except Exception:
+            pass
+
+    # 3. Tertiary Engine: DuckDuckGo Instant Answer API
     if len(results) < top_k:
         try:
             encoded_query = urllib.parse.quote(clean_query)
             ddg_url = f"https://api.duckduckgo.com/?q={encoded_query}&format=json&no_html=1&skip_disambig=1"
-            req = Request(ddg_url, headers=headers)
-            with urlopen(req, timeout=5) as resp:
+            req = Request(ddg_url, headers=browser_headers)
+            with urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
                 abstract = data.get("AbstractText", "").strip()
                 heading = data.get("Heading", "").strip()
                 abs_url = data.get("AbstractURL", "").strip()
-                if abstract:
+                if abstract and not any(r["title"].lower() == heading.lower() for r in results):
                     results.append({
                         "title": heading or clean_query,
                         "snippet": abstract,
                         "url": abs_url,
                         "source": "DuckDuckGo"
                     })
-                for topic in data.get("RelatedTopics", []):
-                    if len(results) >= top_k:
-                        break
-                    text = topic.get("Text", "").strip()
-                    first_url = topic.get("FirstURL", "").strip()
-                    if text and first_url:
-                        results.append({
-                            "title": text[:60] + "..." if len(text) > 60 else text,
-                            "snippet": text,
-                            "url": first_url,
-                            "source": "DuckDuckGo"
-                        })
         except Exception:
             pass
 
-    # 3. Offline Sovereign Knowledge Base Fallback if internet unavailable
+    # 4. Offline Sovereign Knowledge Base Fallback if internet is air-gapped
     if not results:
         try:
             kb_chunks = main.search_knowledge(clean_query, top_k=top_k)
