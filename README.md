@@ -70,55 +70,93 @@ Industrial refining, petrochemical, and critical infrastructure facilities deal 
 | **Security & Audit** | Local Network Auditor (`psutil`), Subprocess Isolation Sandbox |
 | **Database** | SQLite3 (`data/sovereign.db`) |
 | **Report Generation** | ReportLab (`.pdf`), python-docx (`.docx`), openpyxl (`.xlsx`) |
-| **Testing** | Pytest, FastAPI TestClient (12/12 Passing Tests) |
+| **Testing** | Pytest, FastAPI TestClient (19/19 Passing Tests · 100% Pass Rate) |
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start Guide (Step-by-Step for New Users & Evaluators)
 
-### 1. Prerequisites
-- **Python 3.10+** ([python.org](https://www.python.org/downloads/))
-- **Git** ([git-scm.com](https://git-scm.com/))
-- **Ollama** installed and running locally ([ollama.com](https://ollama.com/)) *(Optional if connecting to a remote Ollama / Cloudflare tunnel instance)*
+Follow these simple steps to set up and run the Sovereign AI Workbench on any machine:
 
-### 2. Pull Required Open-Weight Models (Local Mode)
-If running inference 100% locally on your machine, pull the following models:
+---
+
+### Step 1: Prerequisites
+- **Python 3.10+** installed ([python.org](https://www.python.org/downloads/))
+- **Git** installed ([git-scm.com](https://git-scm.com/))
+- **Ollama** installed ([ollama.com](https://ollama.com/)) *(Only required for 100% local air-gapped inference; optional if using a remote tunnel endpoint)*
+
+---
+
+### Step 2: Clone the Repository
+```bash
+git clone https://github.com/200510rj/Sovereign-AI.git
+cd Sovereign-AI
+```
+
+---
+
+### Step 3: Create & Activate Virtual Environment
+
+**On Windows (PowerShell):**
 ```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+**On Linux / macOS (Terminal):**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+---
+
+### Step 4: Install Dependencies
+Install all required packages from `requirements.txt`:
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### Step 5: Choose Inference Mode
+
+#### Option A: 100% Local / Air-Gapped Mode (Default)
+Pull the required open-weight models locally:
+```bash
 ollama pull qwen3.5:4b
 ollama pull qwen2.5-coder:7b
 ollama pull nomic-embed-text
 ollama pull glm-ocr:q8_0
 ```
 
-### 3. Clone Repository & Setup Virtual Environment
-```powershell
-# Clone the repository
-git clone https://github.com/200510rj/Sovereign-AI.git
-cd Sovereign-AI
-
-# Create and activate a virtual environment
-# On Windows (PowerShell):
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# On Linux / macOS:
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install all dependencies
-pip install -r requirements.txt
-```
-
-### 4. Launch Sovereign AI Backend
-```powershell
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Open your browser and navigate to: **`http://127.0.0.1:8000`**
+#### Option B: Remote / Cloudflare Tunnel Mode (No local GPU/models needed)
+- If running on a low-spec machine without local Ollama, simply start the backend (Step 6) and select or paste your remote Ollama / Cloudflare tunnel URL in the **Target Inference Instance** panel in the UI sidebar.
 
 ---
 
-### 🌐 Inference Modes & Target Endpoint Configuration
+### Step 6: Launch Sovereign AI Backend
+```bash
+python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+---
+
+### Step 7: Open the Application
+- Open your browser and go to: **`http://127.0.0.1:8000`**
+- Interactive Swagger API Documentation: **`http://127.0.0.1:8000/docs`**
+
+---
+
+### Step 8: Run Automated Verification Tests
+Run the comprehensive 19-test suite to verify all tools, agents, report generators, and endpoints:
+```bash
+python -m pytest tests/ -v
+```
+
+---
+
+## 🌐 Inference Modes & Target Endpoint Configuration
 
 The Sovereign AI Workbench supports dual operating modes:
 
