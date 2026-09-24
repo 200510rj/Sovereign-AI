@@ -371,7 +371,7 @@ def extract_tool_calls_from_message(msg_content: str) -> list[dict]:
 # LANGCHAIN REACT AGENT LOOP
 # ============================================================
 
-def run_agent(question: str, history: list = None, max_steps: int = 12, base_url: str | None = None) -> dict:
+def run_agent(question: str, history: list = None, max_steps: int = 12, base_url: str | None = None, urgency_prefix: str = "") -> dict:
     """
     Executes a dynamic ReAct agent loop using LangChain ChatOllama & Tool bindings on qwen3.5:4b.
     Provides autonomous multi-step tool calls, reasoning, deliverable generation, and synthesis.
@@ -396,6 +396,9 @@ def run_agent(question: str, history: list = None, max_steps: int = 12, base_url
         "4. When generating reports (PDF, DOCX, XLSX), ALWAYS dynamically construct title and content based strictly on retrieved context and user task. NEVER use generic or dummy text.\n"
         "5. Chain multiple tools autonomously before synthesizing the final answer."
     )
+
+    if urgency_prefix:
+        system_instruction = urgency_prefix.strip() + "\n\n" + system_instruction
 
     lc_messages = [SystemMessage(content=system_instruction)]
 

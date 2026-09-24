@@ -10,6 +10,7 @@ import math
 import os
 import shutil
 import sqlite3
+import time
 import uuid
 from datetime import datetime
 
@@ -173,6 +174,10 @@ class OllamaConfigRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
+
+class ExtractRequest(BaseModel):
+    filename: str
+    doc_type: str = "sop"
 
 
 
@@ -383,10 +388,13 @@ def search_knowledge(
     if not chunks:
         return []
 
-    query_embedding = get_embedding(
-        query,
-        base_url=base_url
-    )
+    try:
+        query_embedding = get_embedding(
+            query,
+            base_url=base_url
+        )
+    except Exception:
+        query_embedding = None
 
     # Keywords for lexical bonus
     stop_words = {'what', 'is', 'the', 'of', 'in', 'and', 'to', 'a', 'for', 'from', 'this', 'that', 'are', 'who', 'tell', 'me', 'about', 'summarize', 'with', 'on', 'an', 'as', 'by', 'at', 'how'}
@@ -397,10 +405,12 @@ def search_knowledge(
 
     for idx, chunk in enumerate(chunks):
 
-        semantic_score = cosine_similarity(
-            query_embedding,
-            chunk["embedding"]
-        )
+        semantic_score = 0.0
+        if query_embedding is not None and "embedding" in chunk:
+            semantic_score = cosine_similarity(
+                query_embedding,
+                chunk["embedding"]
+            )
 
         text_lower = chunk["text"].lower()
         source_lower = chunk.get("source", "").lower()
@@ -415,8 +425,9 @@ def search_knowledge(
                 bonus += min(0.12, count * 0.03)
 
         combined_score = semantic_score + min(0.35, bonus)
+        effective_min = 0.05 if query_embedding is None else min_score
 
-        if combined_score >= min_score:
+        if combined_score >= effective_min:
             results.append({
                 "id": idx,
                 "source": chunk["source"],
@@ -1412,13 +1423,53 @@ KNOWLEDGE BASE:
 
 
 # ============================================================
-# AGENTIC WORKFLOW ENDPOINT (RE-ACT AGENT LOOP)
+# AGENTIC WORKFLOW ENDPOINT (RE-ACT AGENT LOOP WITH LAYA & NEEDLE 3)
 # ============================================================
+
+@app.get("/classify")
+def classify_query_endpoint(q: str):
+    """Debug & Demo endpoint: exposes Laya sub-35ms query classification."""
+    import laya_gateway
+    return laya_gateway.predict_query(q)
+
+
+@app.post("/extract")
+def extract_document_endpoint(req: ExtractRequest):
+    """Structured document extraction powered by Needle 3 (Pydantic schemas)."""
+    import needle_dispatcher
+
+    target = KB_PATH / req.filename.strip()
+    if not target.exists():
+        norm_req = re.sub(r'[\s_]+', '', req.filename.lower())
+        matched_file = None
+        if KB_PATH.exists():
+            for f in KB_PATH.iterdir():
+                if f.is_file():
+                    norm_f = re.sub(r'[\s_]+', '', f.name.lower())
+                    if norm_req == norm_f or norm_req in norm_f or norm_f in norm_req:
+                        matched_file = f
+                        break
+        if matched_file:
+            target = matched_file
+        else:
+            return {"extracted": False, "error": f"File '{req.filename}' not found in knowledge base."}
+
+    try:
+        raw_text = extract_text(target)
+        res = needle_dispatcher.extract_document(raw_text, req.doc_type)
+        res["filename"] = target.name
+        return res
+    except Exception as e:
+        return {"extracted": False, "error": str(e)}
+
 
 @app.post("/agent")
 def agent_endpoint(request: ChatRequest):
     import agent
+    import laya_gateway
+    import needle_dispatcher
 
+    start_time = time.time()
     question = (
         request.prompt or request.message or ""
     ).strip()
@@ -1427,21 +1478,182 @@ def agent_endpoint(request: ChatRequest):
         return {
             "model": "qwen3.5:4b",
             "route": "agent",
+            "path": "empty",
             "answer": "Please enter a request for the Sovereign Agent.",
             "tool_log": [],
             "sources": [],
-            "files_created": []
+            "files_created": [],
+            "laya_meta": None,
+            "needle_meta": None,
+            "urgency": 0,
+            "urgency_label": "low priority",
+            "response_time_ms": 0.0
         }
 
     session_id = request.session_id or str(uuid.uuid4())
     save_chat_message(session_id, "user", question)
 
+    # 1. LAYA GATEWAY CLASSIFICATION (< 35ms)
+    laya_meta = laya_gateway.predict_query(question)
+    urgency = laya_meta.get("urgency", 0)
+    urgency_label = laya_meta.get("urgency_label", "low priority")
+    intent = laya_meta.get("intent", "knowledge_search")
+    is_relevant = laya_meta.get("is_mrpl_relevant", 1.0)
+
+    # GATE: Reject off-topic queries immediately without Ollama inference
+    if is_relevant < 0.15 and intent == "off_topic":
+        refusal_answer = "I am specialized for MRPL refinery operations, technical documentation, code execution, and industrial reporting. Please ask an operational or work-related query."
+        save_chat_message(session_id, "assistant", refusal_answer, route="laya_rejected", model="laya-gateway")
+        total_time_ms = round((time.time() - start_time) * 1000, 2)
+        return {
+            "session_id": session_id,
+            "model": "laya-gateway",
+            "route": "laya_rejected",
+            "path": "laya_rejected",
+            "answer": refusal_answer,
+            "tool_log": [],
+            "sources": [],
+            "files_created": [],
+            "laya_meta": laya_meta,
+            "needle_meta": None,
+            "urgency": urgency,
+            "urgency_label": urgency_label,
+            "response_time_ms": total_time_ms
+        }
+
+    # 2. NEEDLE 3 FAST TOOL DISPATCH FOR SINGLE-TOOL INTENTS
+    SINGLE_TOOL_INTENTS = {"knowledge_search", "document_read", "web_search", "report_generation", "code_execution"}
+
+    if intent in SINGLE_TOOL_INTENTS:
+        needle_res = needle_dispatcher.dispatch(question)
+        if not needle_res.get("fallback"):
+            # Needle 3 successfully executed tool!
+            tool_name = needle_res.get("tool", "")
+            tool_args = needle_res.get("arguments", {})
+            tool_results = needle_res.get("results", [])
+            dur = round(needle_res.get("latency_ms", 0) / 1000, 2)
+
+            tool_log = [{
+                "step": 1,
+                "tool": tool_name,
+                "arguments": tool_args,
+                "success": True,
+                "duration_sec": dur,
+                "summary": f"Dispatched by Needle 3 (confidence {round(needle_res.get('confidence', 1.0), 3)})"
+            }]
+
+            sources = []
+            files_created = []
+            answer = ""
+
+            for r in tool_results:
+                if isinstance(r, dict):
+                    # Knowledge base results
+                    if "raw_results" in r or "results" in r:
+                        raw = r.get("raw_results") or r.get("results", [])
+                        for item in raw:
+                            if isinstance(item, dict):
+                                sources.append({
+                                    "file": item.get("source") or item.get("file", ""),
+                                    "score": item.get("score", 0),
+                                    "snippet": item.get("text") or item.get("snippet", "")
+                                })
+                    # Report generation results
+                    if r.get("filename"):
+                        files_created.append({
+                            "tool": tool_name,
+                            "filename": r.get("filename"),
+                            "download_url": r.get("download_url"),
+                            "format": r.get("format", "pdf")
+                        })
+
+            # Format human-friendly answer based on tool type
+            if files_created:
+                fc = files_created[0]
+                answer = f"Report successfully generated: **{fc['filename']}**.\n\nYou can download it directly here: [{fc['filename']}]({fc['download_url']})"
+            elif tool_name == "search_knowledge_base":
+                if sources:
+                    top_snips = "\n\n".join([f"- **{s.get('file', 'KB')}**: {s.get('snippet', '')[:300]}" for s in sources[:3]])
+                    answer = f"Here is the relevant information retrieved from MRPL knowledge base:\n\n{top_snips}"
+                else:
+                    answer = f"Searched the MRPL knowledge base for '{tool_args.get('query', '')}', but no matching documents were found."
+            elif tool_name == "execute_python_code":
+                first_r = tool_results[0] if tool_results and isinstance(tool_results[0], dict) else {}
+                stdout = first_r.get("stdout", "").strip()
+                stderr = first_r.get("stderr", "").strip()
+                if stdout:
+                    answer = f"Python execution completed successfully:\n```\n{stdout}\n```"
+                elif stderr:
+                    answer = f"Python execution encountered an issue:\n```\n{stderr}\n```"
+                else:
+                    answer = "Python code executed with exit code 0."
+            elif tool_name == "read_uploaded_document":
+                first_r = tool_results[0] if tool_results and isinstance(tool_results[0], dict) else {}
+                txt = first_r.get("text", "")
+                fname = first_r.get("filename", "doc")
+                ext_res = needle_dispatcher.extract_document(txt, "sop")
+                if ext_res.get("extracted"):
+                    fields = ext_res.get("fields", {})
+                    steps_md = "\n".join([f"- {s}" for s in fields.get("key_steps", [])])
+                    answer = (
+                        f"### 📋 Structured Document Overview: **{fields.get('title', fname)}**\n"
+                        f"- **Department:** {fields.get('department', 'N/A')}\n"
+                        f"- **Version / ID:** {fields.get('version', 'N/A')}\n"
+                        f"- **Scope:** {fields.get('scope', 'General')}\n\n"
+                        f"**Key Procedures / Inspection Steps:**\n{steps_md or 'No numbered steps.'}\n\n"
+                        f"<details><summary>📄 View Raw Extracted Text</summary>\n\n```\n{txt[:2000]}\n```\n</details>"
+                    )
+                else:
+                    answer = f"Extracted document text ({fname}):\n\n{txt[:1200]}..."
+            elif tool_name == "web_search":
+                web_parts = []
+                for r in tool_results:
+                    if isinstance(r, dict) and "results" in r:
+                        for w in r.get("results", [])[:3]:
+                            web_parts.append(f"- **{w.get('title', '')}**: {w.get('snippet', '')} ([Link]({w.get('href', '')}))")
+                answer = "Here are the web search results:\n\n" + ("\n\n".join(web_parts) if web_parts else "No results found.")
+            else:
+                answer = "Task executed successfully by Needle 3."
+
+            if urgency == 2:
+                answer = "⚠️ **[CRITICAL OPERATIONAL ISSUE]**\n\n" + answer
+
+            save_chat_message(session_id, "assistant", answer, route="needle3", model="needle-3")
+            total_time_ms = round((time.time() - start_time) * 1000, 2)
+
+            return {
+                "session_id": session_id,
+                "model": "needle-3",
+                "route": "needle3",
+                "path": "needle3",
+                "answer": answer,
+                "tool_log": tool_log,
+                "sources": sources,
+                "files_created": files_created,
+                "laya_meta": laya_meta,
+                "needle_meta": {
+                    "confidence": needle_res.get("confidence"),
+                    "reasoning": needle_res.get("reasoning"),
+                    "fallback": False
+                },
+                "urgency": urgency,
+                "urgency_label": urgency_label,
+                "response_time_ms": total_time_ms
+            }
+
+    # 3. OLLAMA REACT AGENT LOOP (Multi-step or Needle fallback)
     formatted_history = []
     for item in request.history:
         formatted_history.append({"role": item.role, "content": item.content})
 
     ollama_base = request.ollama_url or get_ollama_url()
-    result = agent.run_agent(question, history=formatted_history, base_url=ollama_base)
+    urgency_prefix = ""
+    if urgency == 2:
+        urgency_prefix = "⚠️ CRITICAL PRIORITY REQUEST — Operational emergency. Respond directly and concisely.\n\n"
+    elif urgency == 1:
+        urgency_prefix = "ℹ️ This request needs timely attention.\n\n"
+
+    result = agent.run_agent(question, history=formatted_history, base_url=ollama_base, urgency_prefix=urgency_prefix)
 
     save_chat_message(
         session_id,
@@ -1450,15 +1662,22 @@ def agent_endpoint(request: ChatRequest):
         route="agent",
         model="qwen3.5:4b"
     )
+    total_time_ms = round((time.time() - start_time) * 1000, 2)
 
     return {
         "session_id": session_id,
         "model": "qwen3.5:4b",
         "route": "agent",
+        "path": "ollama_react",
         "answer": result.get("answer", ""),
         "tool_log": result.get("tool_log", []),
         "sources": result.get("sources", []),
-        "files_created": result.get("files_created", [])
+        "files_created": result.get("files_created", []),
+        "laya_meta": laya_meta,
+        "needle_meta": None,
+        "urgency": urgency,
+        "urgency_label": urgency_label,
+        "response_time_ms": total_time_ms
     }
 
 

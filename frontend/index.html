@@ -541,6 +541,43 @@
             border: 1px solid rgba(14, 165, 233, 0.35);
         }
 
+        .route-badge.needle3 {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.4);
+        }
+
+        .route-badge.laya_rejected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .route-badge.intent {
+            background: rgba(139, 92, 246, 0.15);
+            color: #d8b4fe;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        .route-badge.lang {
+            background: rgba(20, 184, 166, 0.15);
+            color: #2dd4bf;
+            border: 1px solid rgba(20, 184, 166, 0.3);
+        }
+
+        .route-badge.urgency-critical {
+            background: rgba(220, 38, 38, 0.25);
+            color: #fca5a5;
+            border: 1px solid rgba(220, 38, 38, 0.5);
+            font-weight: 700;
+        }
+
+        .route-badge.latency {
+            background: rgba(107, 114, 128, 0.15);
+            color: #9ca3af;
+            border: 1px solid rgba(107, 114, 128, 0.25);
+        }
+
         /* Agent Timeline Accordion */
         .agent-timeline {
             margin-top: 12px;
@@ -1438,7 +1475,13 @@
             let badgeClass = 'general';
             let badgeText = '🧠 General AI';
 
-            if (meta && meta.route === 'agent') {
+            if (meta && (meta.route === 'needle3' || meta.path === 'needle3')) {
+                badgeClass = 'needle3';
+                badgeText = '⚡ Needle 3 (On-Device)';
+            } else if (meta && (meta.route === 'laya_rejected' || meta.path === 'laya_rejected')) {
+                badgeClass = 'laya_rejected';
+                badgeText = '🛡️ Laya Filtered';
+            } else if (meta && meta.route === 'agent') {
                 badgeClass = 'agent';
                 badgeText = `🤖 Sovereign Agent (${meta.model || 'qwen3.5:4b'})`;
             } else if (meta && meta.route === 'web_search') {
@@ -1452,6 +1495,22 @@
                 badgeText = `📚 Knowledge Grounded (${meta.model || 'qwen3.5:4b'})`;
             } else if (meta && meta.model) {
                 badgeText = `🧠 ${meta.model}`;
+            }
+
+            let extraBadgesHtml = '';
+            if (meta) {
+                if (meta.laya_meta && meta.laya_meta.intent) {
+                    extraBadgesHtml += `<span class="route-badge intent" title="Laya Intent">🧠 ${escapeHtml(meta.laya_meta.intent)}</span>`;
+                }
+                if (meta.laya_meta && meta.laya_meta.language && meta.laya_meta.language !== 'english') {
+                    extraBadgesHtml += `<span class="route-badge lang" title="Language">🌐 ${escapeHtml(meta.laya_meta.language)}</span>`;
+                }
+                if (meta.urgency === 2) {
+                    extraBadgesHtml += `<span class="route-badge urgency-critical" title="Critical Operational Alert">⚠️ CRITICAL</span>`;
+                }
+                if (meta.response_time_ms) {
+                    extraBadgesHtml += `<span class="route-badge latency" title="Execution Latency">⏱️ ${Math.round(meta.response_time_ms)}ms</span>`;
+                }
             }
 
             let renderedHtml = content;
@@ -1524,8 +1583,11 @@
             row.innerHTML = `
                 <div class="avatar assistant">🤖</div>
                 <div class="message-content">
-                    <div class="message-meta" style="display: flex; align-items: center; justify-content: space-between;">
-                        <span class="route-badge ${badgeClass}">${badgeText}</span>
+                    <div class="message-meta" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            <span class="route-badge ${badgeClass}">${badgeText}</span>
+                            ${extraBadgesHtml}
+                        </div>
                         <div style="display: flex; gap: 6px;">
                             <button class="action-btn" style="padding: 2px 8px; font-size: 11px;" onclick="exportReport(this, 'pdf')">📥 PDF</button>
                             <button class="action-btn" style="padding: 2px 8px; font-size: 11px;" onclick="exportReport(this, 'docx')">📄 DOCX</button>
