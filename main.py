@@ -1499,12 +1499,14 @@ def agent_endpoint(request: ChatRequest):
     urgency_label = laya_meta.get("urgency_label", "low priority")
     intent = laya_meta.get("intent", "knowledge_search")
     is_relevant = laya_meta.get("is_mrpl_relevant", 1.0)
+    print(f"\n[LAYA GATEWAY] Query: '{question}' | Intent: {intent} ({laya_meta.get('intent_confidence', 0):.2f}) | Lang: {laya_meta.get('language')} | Urgency: {urgency_label} | Latency: {laya_meta.get('latency_ms', 0):.2f}ms")
 
     # GATE: Reject off-topic queries immediately without Ollama inference
     if is_relevant < 0.15 and intent == "off_topic":
         refusal_answer = "I am specialized for MRPL refinery operations, technical documentation, code execution, and industrial reporting. Please ask an operational or work-related query."
         save_chat_message(session_id, "assistant", refusal_answer, route="laya_rejected", model="laya-gateway")
         total_time_ms = round((time.time() - start_time) * 1000, 2)
+        print(f"[LAYA REJECTED] Off-topic query filtered in {total_time_ms}ms (Zero LLM inference)\n")
         return {
             "session_id": session_id,
             "model": "laya-gateway",
@@ -1532,6 +1534,7 @@ def agent_endpoint(request: ChatRequest):
             tool_args = needle_res.get("arguments", {})
             tool_results = needle_res.get("results", [])
             dur = round(needle_res.get("latency_ms", 0) / 1000, 2)
+            print(f"[NEEDLE 3] Direct on-device tool dispatch: '{tool_name}' (Confidence: {needle_res.get('confidence')}) in {needle_res.get('latency_ms', 0):.1f}ms\n")
 
             tool_log = [{
                 "step": 1,
@@ -1642,6 +1645,7 @@ def agent_endpoint(request: ChatRequest):
             }
 
     # 3. OLLAMA REACT AGENT LOOP (Multi-step or Needle fallback)
+    print(f"[OLLAMA REACT] Fallback to ReAct reasoning loop (Intent: {intent})\n")
     formatted_history = []
     for item in request.history:
         formatted_history.append({"role": item.role, "content": item.content})
